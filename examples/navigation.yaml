@@ -1,0 +1,28 @@
+# Example experiment configuration — the input format shared by `caasi sim run`,
+# `caasi train`, `caasi benchmark start` and `caasi dataset generate`.
+#
+#   caasi sim run examples/navigation.yaml --dry-run
+#
+# `script` is required; relative paths resolve against this file's directory.
+
+name: warehouse_navigation
+backend: lab                              # sim | lab | python  (default: sim)
+script: scripts/navigation.py
+headless: true
+args: ["--envs", "256", "--steps", "1000000"]
+env:
+  ASSET_ROOT: /data/assets
+
+# Everything below is ignored by Caasi, but stays available to your script through
+# the CAASI_EXPERIMENT environment variable (the absolute path of this file).
+robot: go2
+scene: warehouse
+task: navigation
+sensors:
+  lidar: { enabled: true }
+  camera: { enabled: false }
+randomization:
+  friction: { range: [0.5, 1.2] }
+output:
+  directory: ./runs
+  record: true

@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Projects — Caasi CLI Documentation</title>
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/theme.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html">Caa<span>si</span></a>
+  <span class="badge">v0.1.0</span>
+  <span class="tagline">Projects: init · setup · project · robot · scene · task</span>
+  <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
+</header>
+<div class="layout">
+<aside id="sidebar"></aside>
+<main>
+
+<h1>Projects</h1>
+<p class="lead">
+A Caasi project is a plain directory with a <code>caasi.yaml</code> marker and a fixed layout for
+robots, scenes, tasks, experiments, datasets and runs. No lock-in: everything is YAML and
+folders you can inspect with <code>ls</code>.
+</p>
+
+<h2 id="layout">Project layout</h2>
+<pre><code>my-project/
+├── caasi.yaml        # project marker + metadata (kind, name, version)
+├── robots/           # robot definitions   (one YAML per robot)
+├── scenes/           # scene definitions   (one YAML per scene)
+├── tasks/            # task definitions    (one YAML per task)
+├── experiments/      # experiment configs for `caasi sim run` / `train` / …
+├── datasets/         # generated datasets
+└── runs/             # project-local runs (optional; global runs live in ~/.caasi/runs)</code></pre>
+<p>Project commands find the root by walking <strong>upward</strong> from the current directory
+until a <code>caasi.yaml</code> file appears — so they work from any subdirectory. Outside a
+project they fail with:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi project info</span>
+<span class="err">Error: Not inside a Caasi project (no caasi.yaml found). Run 'caasi init' first.</span></span></code></pre>
+
+<h2 id="init">caasi init</h2>
+<p>Creates the scaffold. Never deletes anything: existing subdirectories are left untouched and
+only <code>caasi.yaml</code> can be overwritten (with <code>--force</code>).</p>
+<pre class="syn"><code>caasi init [PATH] [--name NAME] [--force] [--json]</code></pre>
+<table>
+  <thead><tr><th>Parameter</th><th>Kind</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>PATH</code></td><td>argument</td><td>path</td><td><code>.</code></td><td>Directory to create the project in (<code>~</code> expanded, resolved to absolute).</td></tr>
+    <tr><td><code>--name</code></td><td>option</td><td>str</td><td>directory name</td><td>Project name stored in <code>caasi.yaml</code>.</td></tr>
+    <tr><td><code>--force</code></td><td>option</td><td>flag</td><td>off</td><td>Overwrite an existing <code>caasi.yaml</code>.</td></tr>
+    <tr><td><code>--json</code></td><td>option</td><td>flag</td><td>off</td><td>Machine-readable result.</td></tr>
+  </tbody>
+</table>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi init ~/experiments/demo</span>
+<span class="ok">Created project 'demo' at /home/you/experiments/demo</span>
+<span class="out">  caasi.yaml
+  robots/
+  scenes/
+  tasks/
+  experiments/
+  datasets/
+  runs/
+  Next: create components with 'caasi robot create &lt;name&gt;'.</span>
+<span class="in">caasi init ~/experiments/demo</span>
+<span class="err">Error: '/home/you/experiments/demo/caasi.yaml' already exists (use --force to overwrite)</span></span></code></pre>
+<p>The generated <code>caasi.yaml</code>:</p>
+<pre><code>kind: project
+name: demo
+version: 1</code></pre>
+<p>JSON payload: <code>{"root": "…", "name": "demo", "dirs": ["robots", "scenes", "tasks",
+"experiments", "datasets", "runs"]}</code>. Exit <code>0</code> on success, <code>1</code> on
+collision or if <code>PATH</code> is an existing file.</p>
+
+<h2 id="setup">caasi setup</h2>
+<p>Detects the five installable ecosystem components and — for a named component — prints a
+step-by-step installation guide tailored to how Caasi will later find it. Read-only: it never
+installs anything itself.</p>
+<pre class="syn"><code>caasi setup [COMPONENT] [--json]</code></pre>
+<p><code>COMPONENT</code> ∈ <code>isaacsim</code>, <code>isaaclab</code>, <code>ros2</code>,
+<code>pytorch</code>, <code>docker</code>. Omit it for the summary table.</p>
+
+<h3>Summary mode</h3>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi setup</span>
+<span class="out">        Ecosystem Setup
+  Component  Status      Detail
+  isaacsim   ✗ fail      Isaac Sim not detected
+  isaaclab   ✗ fail      Isaac Lab not detected
+  ros2       ✓ ok        distro 'jazzy', ros2 at /opt/ros/jazzy/bin/ros2
+  pytorch    ✓ ok        torch 2.4.0
+  docker     ✓ ok        Docker version 27.1.1, build 6312585
+Missing core components: isaacsim, isaaclab. Run 'caasi setup &lt;component&gt;' for guidance.</span>
+<span class="err">exit code: 1</span></span></code></pre>
+<p>Exit code: <code>1</code> only when a <strong>core</strong> component
+(<code>isaacsim</code>, <code>isaaclab</code>, <code>ros2</code>) fails detection —
+<code>pytorch</code>/<code>docker</code> are optional. JSON payload:
+<code>{"components": {name: {"status", "detail"}}, "missing": [ … ]}</code>.</p>
+
+<h3>Guide mode</h3>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi setup isaacsim</span>
+<span class="out">✗ isaacsim — Isaac Sim not detected
+
+Install Isaac Sim (pip, Omniverse launcher or NGC container), then either
+register it:
+  caasi config set tools.isaacsim.versions."6.0".path /opt/isaac-sim-6.0
+  caasi config set tools.isaacsim.default "6.0"
+or point the environment at it:
+  export ISAACSIM_PATH=/opt/isaac-sim-6.0</span></span></code></pre>
+<p>Each component has its own guide (ros2 → apt + sourcing, pytorch → pip index matching your
+CUDA from <code>caasi gpu status</code>, docker → group setup + NVIDIA Container Toolkit).
+Single-component mode exits <code>1</code> only if that component's status is
+<code>fail</code>. JSON payload: <code>{"component", "status", "detail", "guide"}</code>.</p>
+
+<h3>Detection order per component</h3>
+<table>
+  <thead><tr><th>Component</th><th>Looked for, in order</th></tr></thead>
+  <tbody>
+    <tr><td><code>isaacsim</code></td><td>registry <code>tools.isaacsim</code> → <code>ISAACSIM_PATH</code> → <code>~/isaacsim</code>, <code>~/.local/share/ov/pkg/isaac-sim*</code>, <code>/opt/isaac-sim*</code>, <code>/opt/isaacsim*</code> → pip <code>isaacsim</code></td></tr>
+    <tr><td><code>isaaclab</code></td><td>registry <code>tools.isaaclab</code> → <code>ISAACLAB_PATH</code> → <code>~/isaaclab</code>, <code>~/IsaacLab</code>, <code>~/workspace/isaaclab</code>, <code>~/workspace/IsaacLab</code> → pip <code>isaaclab</code></td></tr>
+    <tr><td><code>ros2</code></td><td><code>ROS_DISTRO</code> / <code>/opt/ros</code> scan → distro's <code>bin/ros2</code> → <code>ros2</code> on PATH</td></tr>
+    <tr><td><code>pytorch</code></td><td>pip metadata of <code>torch</code> (never imported)</td></tr>
+    <tr><td><code>docker</code></td><td><code>docker</code> on PATH, probed with <code>docker --version</code> (status <code>skip</code> when absent)</td></tr>
+  </tbody>
+</table>
+
+<h2 id="project">caasi project</h2>
+
+<h3 id="project-info">caasi project info</h3>
+<pre class="syn"><code>caasi project info [--json]</code></pre>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">cd ~/experiments/demo &amp;&amp; caasi project info</span>
+<span class="out">         Project
+  Root         /home/you/experiments/demo
+  Name         demo
+  Robots       2
+  Scenes       1
+  Tasks        3
+  Experiments  1</span>
+<span class="in">caasi project info --json</span>
+<span class="out">{ "root": "/home/you/experiments/demo", "name": "demo",
+  "counts": { "robot": 2, "scene": 1, "task": 3, "experiments": 1 } }</span></span></code></pre>
+<p>Counts are simply the number of <code>*.yaml</code> files in <code>robots/</code>,
+<code>scenes/</code>, <code>tasks/</code> and <code>experiments/</code>.</p>
+
+<h3 id="project-validate">caasi project validate</h3>
+<pre class="syn"><code>caasi project validate</code></pre>
+<p>Checks the whole layout and every definition file:</p>
+<ul>
+  <li><code>caasi.yaml</code> exists, parses, is a mapping, and has a <code>name</code>;</li>
+  <li>all six directories exist;</li>
+  <li>every <code>robots/*.yaml</code>, <code>scenes/*.yaml</code>, <code>tasks/*.yaml</code>
+      parses and its <code>kind:</code> field matches its directory.</li>
+</ul>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi project validate</span>
+<span class="out">2 issue(s) found:
+  ✗ missing directory 'datasets/'
+  ✗ robots/agv.yaml: kind is 'scene', expected 'robot'</span>
+<span class="err">exit code: 1</span>
+<span class="in">mkdir datasets &amp;&amp; caasi project validate</span>
+<span class="ok">Project at /home/you/experiments/demo is valid.</span></span></code></pre>
+<p>Exit <code>0</code> valid / <code>1</code> any issue. No <code>--json</code>.</p>
+
+<h2 id="definitions">caasi robot / scene / task</h2>
+<p>Three parallel groups manage the definition YAMLs. A definition is one file:
+<code>robots/&lt;name&gt;.yaml</code>, <code>scenes/&lt;name&gt;.yaml</code>,
+<code>tasks/&lt;name&gt;.yaml</code>. The same subcommands exist for all three
+(<code>info</code> is robot-only).</p>
+
+<h3 id="def-list">list</h3>
+<pre class="syn"><code>caasi robot list [--json]      # same for scene / task</code></pre>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi robot list</span>
+<span class="out">              Robots
+  Name   Description
+  agv    Warehouse AGV
+  arm    6-DOF manipulator</span>
+<span class="in">caasi robot list --json</span>
+<span class="out">[ { "name": "agv", "description": "Warehouse AGV",
+    "path": "/home/you/experiments/demo/robots/agv.yaml" }, … ]</span></span></code></pre>
+<p>An empty directory is not an error — it prints a “create one with…” hint and exits 0.</p>
+
+<h3 id="def-create">create</h3>
+<pre class="syn"><code>caasi robot create NAME [--description|-d TEXT]     # same for scene / task</code></pre>
+<ul>
+  <li><code>NAME</code> must match <code>[A-Za-z0-9][A-Za-z0-9_-]*</code> (start alphanumeric,
+      then letters/digits/<code>-</code>/<code>_</code>).</li>
+  <li>Never overwrites: an existing file fails with
+      <code>Error: '&lt;path&gt;' already exists</code> (exit 1). There is no <code>--force</code>
+      — edit the file instead.</li>
+</ul>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi robot create agv -d "Warehouse AGV"</span>
+<span class="ok">Created robot 'agv' at /home/you/experiments/demo/robots/agv.yaml.</span></span></code></pre>
+<p>The generated templates (fill them in with your asset paths):</p>
+<pre><code># robots/&lt;name&gt;.yaml          # scenes/&lt;name&gt;.yaml      # tasks/&lt;name&gt;.yaml
+kind: robot                    kind: scene               kind: task
+name: agv                      name: warehouse           name: pick-place
+description: Warehouse AGV     description: ""           description: ""
+urdf: ""                       usd: ""
+usd: ""
+dof: 0
+sensors: []
+tasks: []</code></pre>
+
+<h3 id="def-inspect">inspect</h3>
+<pre class="syn"><code>caasi robot inspect NAME [--json]     # same for scene / task</code></pre>
+<p>Prints the definition file as-is (human: YAML; <code>--json</code>: the parsed object).
+A missing definition fails with <code>Error: No robot named 'agv2' (looked in 'robots/').</code>
+(exit 1).</p>
+
+<h3 id="robot-info">caasi robot info</h3>
+<pre class="syn"><code>caasi robot info NAME</code></pre>
+<p>A short human summary of one robot — the fields that matter, skipping empty ones:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi robot info agv</span>
+<span class="out">agv
+  Warehouse AGV
+  DOF: 4
+  URDF: assets/agv/agv.urdf
+  Sensors: lidar, camera_front
+  Tasks: navigate, dock</span></span></code></pre>
+<p>No <code>--json</code> (use <code>inspect --json</code>).</p>
+
+<h2 id="workflow">Putting it together</h2>
+<pre class="term"><code><span class="t-head">a typical session</span><span class="t-body"><span class="in">caasi setup</span>
+<span class="dim"># → ros2 ok, isaacsim missing? follow the guide</span>
+<span class="in">caasi init ~/experiments/warehouse &amp;&amp; cd ~/experiments/warehouse</span>
+<span class="in">caasi robot create agv -d "Warehouse AGV"</span>
+<span class="in">caasi scene create aisles -d "Racking aisles"</span>
+<span class="in">caasi task create navigate</span>
+<span class="dim"># edit robots/agv.yaml → set urdf:/usd:, sensors, tasks</span>
+<span class="dim"># write experiments/wave.yaml → see the Simulation page</span>
+<span class="in">caasi project validate &amp;&amp; caasi sim run experiments/wave.yaml</span></span></code></pre>
+
+<div class="page-nav">
+  <a class="prev" href="runs.html"><span class="pn-label">Previous</span><span class="pn-title">← Runs &amp; Logs</span></a>
+  <a class="next" href="simulation.html"><span class="pn-label">Next</span><span class="pn-title">Simulation →</span></a>
+</div>
+
+<footer class="doc-footer">
+  Caasi CLI 0.1.0 — these pages live in <code>docs/</code> and need no build step.
+  Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
+</footer>
+</main>
+</div>
+<script src="assets/copy.js"></script>
+<script src="assets/sidebar.js"></script>
+</body>
+</html>

@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Runs &amp; Logs — Caasi CLI Documentation</title>
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/theme.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html">Caa<span>si</span></a>
+  <span class="badge">v0.1.0</span>
+  <span class="tagline">Runs: the process model behind every long-running command</span>
+  <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
+</header>
+<div class="layout">
+<aside id="sidebar"></aside>
+<main>
+
+<h1>Runs &amp; Logs</h1>
+<p class="lead">
+A <strong>run</strong> is Caasi's unit of long-running work: a simulation, a training job, a ROS
+launch, an SSH batch job or a container. Runs are started <em>detached</em> — the CLI returns
+immediately and the process survives your terminal — and every run keeps its own logs, metadata
+and lifecycle state on disk.
+</p>
+
+<h2 id="model">The run model</h2>
+
+<h3>Where runs live</h3>
+<p>All runs are stored under <code>paths.runs</code> (default <code>~/.caasi/runs</code>), one
+directory per run:</p>
+<pre><code>~/.caasi/runs/
+└── 20260905-142301-wave/          # run id: &lt;timestamp&gt;-&lt;name-slug&gt;
+    ├── manifest.yaml              # metadata (written after the process spawns)
+    ├── run.sh                     # bash wrapper that records the exit code
+    ├── stdout.log                 # everything the process prints
+    ├── stderr.log
+    ├── exit_code                  # appears when the process finishes
+    └── …                          # any artifacts the process itself writes here</code></pre>
+<p>The <strong>run id</strong> is <code>YYYYmmdd-HHMMSS-&lt;slug&gt;</code> — a local timestamp plus
+the run name, lowercased with non-alphanumeric runs replaced by <code>-</code>. Because ids are
+timestamp-prefixed, sorting them sorts by time.</p>
+
+<h3>How a run is started</h3>
+<ol>
+  <li>The run directory and the <code>run.sh</code> wrapper are created. The wrapper executes the
+      command and writes its exit code into <code>exit_code</code> when it finishes.</li>
+  <li>The process is spawned with <code>start_new_session=True</code> (its own process group) and
+      <code>stdin</code> detached, stdout/stderr redirected into the log files. The CLI never waits
+      for it.</li>
+  <li><code>manifest.yaml</code> records everything: id, name, backend, kind, full command,
+      working directory, creation time, PID, and the paused/stopped flags.</li>
+</ol>
+
+<h3>Manifest fields</h3>
+<table>
+  <thead><tr><th>Field</th><th>Content</th></tr></thead>
+  <tbody>
+    <tr><td><code>id</code> / <code>name</code></td><td>Run id and human name.</td></tr>
+    <tr><td><code>backend</code></td><td>What executes it: <code>python</code>, <code>sim</code>, <code>lab</code>, <code>ros</code>, <code>ssh</code>, <code>container</code>.</td></tr>
+    <tr><td><code>kind</code></td><td>What it is: <code>run</code>, <code>experiment</code>, <code>train</code>, <code>benchmark</code>, <code>dataset</code>, <code>test</code>, <code>ros</code>, <code>nav</code>, <code>moveit</code>, <code>remote</code>, <code>container</code>.</td></tr>
+    <tr><td><code>command</code></td><td>Full argv list.</td></tr>
+    <tr><td><code>cwd</code></td><td>Absolute working directory.</td></tr>
+    <tr><td><code>created</code></td><td>ISO-8601 timestamp with timezone.</td></tr>
+    <tr><td><code>pid</code></td><td>PID of the wrapper process (its whole process group is controlled).</td></tr>
+    <tr><td><code>paused</code> / <code>stopped</code></td><td>Lifecycle flags set by pause/stop.</td></tr>
+    <tr><td><code>extra</code></td><td>Command-specific metadata (experiment path, image, remote, …). Visible only in the manifest file, not in JSON output.</td></tr>
+  </tbody>
+</table>
+
+<h3>Status: derived, not remembered</h3>
+<p>Status is computed on every query, in strict precedence:</p>
+<table>
+  <thead><tr><th>Status</th><th>Meaning</th><th>Derived from</th></tr></thead>
+  <tbody>
+    <tr><td><span class="pill ok">succeeded</span></td><td>Finished with exit code 0.</td><td><code>exit_code</code> file = 0</td></tr>
+    <tr><td><span class="pill fail">failed</span></td><td>Finished with non-zero exit code.</td><td><code>exit_code</code> file ≠ 0</td></tr>
+    <tr><td><span class="pill info">running</span></td><td>Alive and executing.</td><td>No exit code + PID alive</td></tr>
+    <tr><td><span class="pill warn">paused</span></td><td>Frozen with <code>SIGSTOP</code>.</td><td>No exit code + PID alive + paused flag</td></tr>
+    <tr><td><span class="pill">stopped</span></td><td>Terminated by <code>caasi run stop</code>.</td><td>No exit code + PID dead + stopped flag</td></tr>
+    <tr><td><span class="pill fail">lost</span></td><td>Vanished without recording an exit code (SIGKILL, reboot).</td><td>No exit code + PID dead + no flags</td></tr>
+  </tbody>
+</table>
+<div class="callout note">
+  <div class="c-title">Note</div>
+  <p>A stopped run may report <code>failed</code> instead of <code>stopped</code>: if the wrapper
+  survived long enough to record the SIGTERM exit code (typically 143), the exit code wins.
+  Both mean “terminated by you”.</p>
+</div>
+
+<h3 id="query">Referring to a run: the QUERY argument</h3>
+<p>Every command that takes a run accepts a flexible <code>QUERY</code>:</p>
+<ul>
+  <li><code>latest</code>, <code>last</code> or <code>newest</code> → the most recent run;</li>
+  <li>an exact run id → that run;</li>
+  <li>a <strong>unique</strong> id prefix or exact run name → that run
+      (<code>caasi logs 20260905-14</code>, <code>caasi logs wave</code>).</li>
+</ul>
+<p>Ambiguous prefixes and unknown queries fail with
+<code>Error: No run matching '&lt;query&gt;'.</code> (exit 1).</p>
+
+<h2 id="run">caasi run</h2>
+
+<h3 id="run-list">caasi run list</h3>
+<pre class="syn"><code>caasi run list [--limit|-n N] [--json]</code></pre>
+<table>
+  <thead><tr><th>Option</th><th>Short</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>--limit</code></td><td><code>-n</code></td><td>int</td><td><code>20</code></td><td>Number of runs to show (newest first).</td></tr>
+    <tr><td><code>--json</code></td><td></td><td>flag</td><td>off</td><td>Array of run records.</td></tr>
+  </tbody>
+</table>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi run list</span>
+<span class="out">                                    Runs
+  ID                      Name          Backend    Status     Created              PID
+  20260905-151207-ant     ant           lab        running    2026-09-05 15:12:07  51244
+  20260905-142301-wave    wave          sim        succeeded  2026-09-05 14:23:01  —
+  20260905-091544-nav2    nav2-bringup  ros        stopped    2026-09-05 09:15:44  —</span></span></code></pre>
+<p>Always exits <code>0</code>; an empty history prints <code>No runs recorded yet.</code></p>
+
+<h3 id="run-record-json">The run record (JSON shape)</h3>
+<p>All <code>--json</code> outputs of run commands share this shape:</p>
+<pre><code>{
+  "id": "20260905-142301-wave",
+  "name": "wave",
+  "backend": "sim",
+  "kind": "experiment",
+  "command": ["/opt/isaac-sim-6.0/python.sh", "/home/you/demo/scripts/wave.py", "--steps", "10000"],
+  "cwd": "/home/you/demo/experiments",
+  "created": "2026-09-05T14:23:01+08:00",
+  "pid": 48213,
+  "paused": false,
+  "stopped": false,
+  "directory": "/home/you/.caasi/runs/20260905-142301-wave",
+  "status": "succeeded"
+}</code></pre>
+
+<h3 id="run-status">caasi run status</h3>
+<pre class="syn"><code>caasi run status QUERY [--json]</code></pre>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi run status latest</span>
+<span class="out">wave (20260905-142301-wave)
+  Status     succeeded
+  Backend    sim
+  Kind       experiment
+  Created    2026-09-05T14:23:01+08:00
+  PID        48213
+  Directory  /home/you/.caasi/runs/20260905-142301-wave
+  Command    /opt/isaac-sim-6.0/python.sh /home/you/demo/scripts/wave.py --steps 10000</span></span></code></pre>
+<p>Exit <code>0</code> when found, <code>1</code> when not.</p>
+
+<h3 id="run-stop">caasi run stop</h3>
+<pre class="syn"><code>caasi run stop QUERY</code></pre>
+<p>Terminates the whole process group: resumes it first if paused, sends <code>SIGTERM</code>,
+waits up to 5 seconds, escalates to <code>SIGKILL</code>, and marks the manifest
+<code>stopped</code>. Already-finished runs are a no-op success.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi run stop ant</span>
+<span class="ok">Run 20260905-151207-ant stopped.</span></span></code></pre>
+<p>Exit <code>1</code> if the run is unknown or the PID somehow survives SIGKILL.</p>
+
+<h3 id="run-pause">caasi run pause / resume</h3>
+<pre class="syn"><code>caasi run pause  QUERY        # SIGSTOP to the process group — only when running
+caasi run resume QUERY        # SIGCONT — only when paused</code></pre>
+<p>Pause freezes the process in place (it holds its GPU memory — check with
+<code>caasi gpu memory</code>); resume continues exactly where it stopped. Wrong-state calls fail
+with e.g. <code>Error: Run &lt;id&gt; is not running (status: succeeded).</code> (exit 1).</p>
+
+<h3 id="run-delete">caasi run delete</h3>
+<pre class="syn"><code>caasi run delete QUERY [--force]</code></pre>
+<table>
+  <thead><tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>--force</code></td><td>flag</td><td>off</td><td>Stop the run first if it is still active.</td></tr>
+  </tbody>
+</table>
+<p>Removes the whole run directory (logs, manifest, artifacts). Refuses while the run is
+<code>running</code> or <code>paused</code> unless <code>--force</code>. Terminal, stopped and lost
+runs are always deletable.</p>
+
+<h3 id="run-inspect">caasi run inspect</h3>
+<pre class="syn"><code>caasi run inspect QUERY [--json]</code></pre>
+<p>Lists every artifact file inside the run directory with human-readable sizes. JSON adds a
+<code>files</code> array to the run record:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi run inspect latest --json | jq '.files'</span>
+<span class="out">[
+  { "path": "manifest.yaml", "size": 412 },
+  { "path": "run.sh", "size": 118 },
+  { "path": "stdout.log", "size": 28413 },
+  { "path": "stderr.log", "size": 0 },
+  { "path": "metrics/result.json", "size": 1024 }
+]</span></span></code></pre>
+<div class="callout tip">
+  <div class="c-title">Tip — artifacts</div>
+  <p>Your scripts can write outputs into <code>$CAASI_RUN_DIR</code> (set for viewers) or simply
+  print to stdout — everything lands in the run directory, and <code>replay</code> treats all
+  files beyond the five bookkeeping files as recorded data.</p>
+</div>
+
+<h2 id="logs">caasi logs</h2>
+<p><code>caasi logs QUERY</code> is a top-level alias of <code>caasi run logs QUERY</code> — the
+command you will use most.</p>
+<pre class="syn"><code>caasi logs QUERY [--lines|-n N] [--follow|-f] [--stream|-s stdout|stderr]</code></pre>
+<table>
+  <thead><tr><th>Option</th><th>Short</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>--lines</code></td><td><code>-n</code></td><td>int</td><td><code>50</code></td><td>Number of trailing lines to show.</td></tr>
+    <tr><td><code>--follow</code></td><td><code>-f</code></td><td>flag</td><td>off</td><td>Tail the log until the run ends; Ctrl+C stops following (the run keeps going).</td></tr>
+    <tr><td><code>--stream</code></td><td><code>-s</code></td><td>str</td><td><code>stdout</code></td><td>Which log file: <code>stdout</code> or <code>stderr</code>.</td></tr>
+  </tbody>
+</table>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi logs latest -n 3</span>
+<span class="out">[14:41:02] step 9000/10000  fps 241.3
+[14:41:07] step 10000/10000 fps 244.1
+[14:41:07] done.</span>
+<span class="in">caasi logs latest -f -s stderr</span>
+<span class="out">…follows stderr live until the run ends…</span></span></code></pre>
+<p>Follow mode stops automatically when the run reaches <code>succeeded</code>,
+<code>failed</code> or <code>stopped</code>. Errors (exit 1): unknown run, unknown
+<code>--stream</code> value, or the log file does not exist. No <code>--json</code> — logs are
+already plain text.</p>
+
+<h3>Typical lifecycle</h3>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi sim run experiments/wave.yaml</span>
+<span class="ok">Run 20260905-142301-wave started in the background.</span>
+<span class="in">caasi run pause latest</span>
+<span class="ok">Run 20260905-142301-wave paused.</span>
+<span class="in">caasi run resume latest</span>
+<span class="ok">Run 20260905-142301-wave resumed.</span>
+<span class="in">caasi run stop latest &amp;&amp; caasi run inspect latest &amp;&amp; caasi run delete latest</span>
+<span class="ok">Run 20260905-142301-wave stopped.
+Run 20260905-142301-wave deleted.</span></span></code></pre>
+
+<div class="page-nav">
+  <a class="prev" href="configuration.html"><span class="pn-label">Previous</span><span class="pn-title">← Configuration</span></a>
+  <a class="next" href="projects.html"><span class="pn-label">Next</span><span class="pn-title">Projects →</span></a>
+</div>
+
+<footer class="doc-footer">
+  Caasi CLI 0.1.0 — these pages live in <code>docs/</code> and need no build step.
+  Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
+</footer>
+</main>
+</div>
+<script src="assets/copy.js"></script>
+<script src="assets/sidebar.js"></script>
+</body>
+</html>

@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Environment — Caasi CLI Documentation</title>
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/theme.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html">Caa<span>si</span></a>
+  <span class="badge">v0.1.0</span>
+  <span class="tagline">Environment: doctor · gpu · system · info · version</span>
+  <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
+</header>
+<div class="layout">
+<aside id="sidebar"></aside>
+<main>
+
+<h1>Environment</h1>
+<p class="lead">
+Answer the question “<em>can this machine actually run my stack?</em>” before wasting an hour on
+a launch that was going to fail anyway. These commands inspect the OS, GPUs, drivers, Python
+environment and the detected ecosystem — all read-only, all scriptable.
+</p>
+
+<h2 id="doctor">caasi doctor</h2>
+<p>Runs the full environment diagnostics suite: 13 sections, each made of small independent
+checks. Every check reports one of four statuses and, when useful, a fix hint.</p>
+
+<pre class="syn"><code>caasi doctor [--component|-c NAME] [--verbose] [--quiet|-q] [--json]</code></pre>
+
+<h3>Options</h3>
+<table>
+  <thead><tr><th>Option</th><th>Short</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>--component</code></td><td><code>-c</code></td><td>str</td><td>all</td><td>Run a single section only (see table below).</td></tr>
+    <tr><td><code>--verbose</code></td><td></td><td>flag</td><td>off</td><td>Show details and hints for <em>every</em> check, not only problems.</td></tr>
+    <tr><td><code>--quiet</code></td><td><code>-q</code></td><td>flag</td><td>off</td><td>Print nothing; only the exit code speaks.</td></tr>
+    <tr><td><code>--json</code></td><td></td><td>flag</td><td>off</td><td>Machine-readable report.</td></tr>
+  </tbody>
+</table>
+
+<h3>What gets checked</h3>
+<table>
+  <thead><tr><th>Section (<code>--component</code>)</th><th>Checks</th></tr></thead>
+  <tbody>
+    <tr><td><code>system</code></td><td>OS (fails unless Linux), kernel version</td></tr>
+    <tr><td><code>hardware</code></td><td>CPU model/cores, RAM (warns below 16 GiB)</td></tr>
+    <tr><td><code>nvidia</code></td><td><code>nvidia-smi</code> presence (fails if missing), driver version, every GPU, CUDA version</td></tr>
+    <tr><td><code>graphics</code></td><td>Vulkan (<code>vulkaninfo</code> or libvulkan via <code>ldconfig</code>), display server (skipped headless)</td></tr>
+    <tr><td><code>python</code></td><td>Python ≥ 3.10 (fails otherwise), environment kind (conda / venv / system)</td></tr>
+    <tr><td><code>isaac</code></td><td>Isaac Sim and Isaac Lab detection (registry → env → common paths → pip)</td></tr>
+    <tr><td><code>ros</code></td><td>ROS 2 distro, <code>setup.bash</code>, <code>ros2</code> CLI, RMW middleware</td></tr>
+    <tr><td><code>robotics</code></td><td>Nav2, MoveIt 2, ros2_control via <code>ros2 pkg prefix</code> (skipped without ros2)</td></tr>
+    <tr><td><code>ml</code></td><td>PyTorch, TensorRT, ONNX Runtime (pip metadata), cuDNN</td></tr>
+    <tr><td><code>vision</code></td><td>OpenCV, Open3D</td></tr>
+    <tr><td><code>simulators</code></td><td>Gazebo, MuJoCo (skipped when absent)</td></tr>
+    <tr><td><code>containers</code></td><td>Docker, Podman (warns if neither)</td></tr>
+    <tr><td><code>storage</code></td><td>Free disk on <code>paths.runs</code> (fails &lt; 5 GiB, warns &lt; 20 GiB)</td></tr>
+  </tbody>
+</table>
+
+<h3>Example — full report</h3>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi doctor</span>
+<span class="out">Environment Diagnostics
+────────────────────────
+system
+  ✓ OS — Ubuntu 24.04.1 LTS
+  ✓ Kernel — 6.8.0-45-generic
+hardware
+  ✓ CPU — AMD Ryzen 9 7950X (32 cores)
+  ✓ RAM — 62.7 GiB
+nvidia
+  ✓ nvidia-smi — 550.107.02
+  ✓ GPU 0 — NVIDIA GeForce RTX 4090 (24564 MiB)
+  ✓ CUDA — 12.4
+python
+  ✓ Python — 3.11.9
+  ✓ Environment — venv
+isaac
+  ✗ Isaac Sim — not detected
+    ↳ Install it or register a path: caasi setup isaacsim
+ros
+  ✓ ROS 2 distro — jazzy
+  ✓ ros2 CLI — /opt/ros/jazzy/bin/ros2
+storage
+  ✓ Disk (runs) — 412.9 GiB free
+1 failure(s), 0 warning(s)</span>
+<span class="err">exit code: 1</span></span></code></pre>
+
+<h3>Example — one section, and scripting with exit codes</h3>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi doctor -c nvidia --verbose</span>
+<span class="out">nvidia
+  ✓ nvidia-smi — 550.107.02
+    ↳ Install the NVIDIA driver if this check fails.
+  ✓ GPU 0 — NVIDIA GeForce RTX 4090 (24564 MiB)
+  ✓ CUDA — 12.4</span>
+<span class="in">caasi doctor -q &amp;&amp; echo ready || echo broken</span>
+<span class="err">broken</span></span></code></pre>
+
+<h3>JSON output</h3>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi doctor --json | jq '.summary'</span>
+<span class="out">{
+  "checks": [
+    { "section": "nvidia", "name": "nvidia-smi", "status": "ok",
+      "detail": "550.107.02", "hint": null },
+    { "section": "isaac", "name": "Isaac Sim", "status": "fail",
+      "detail": "Isaac Sim not detected",
+      "hint": "Install it or register a path: caasi setup isaacsim" }
+  ],
+  "summary": { "ok": 11, "warn": 0, "fail": 1, "skip": 4 },
+  "exit_code": 1
+}</span></span></code></pre>
+<p><code>status</code> is one of <span class="pill ok">ok</span> <span class="pill warn">warn</span>
+<span class="pill fail">fail</span> <span class="pill">skip</span>.</p>
+
+<h3>Exit codes</h3>
+<table>
+  <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>0</code></td><td>No check reported <code>fail</code> (warnings are fine).</td></tr>
+    <tr><td><code>1</code></td><td>At least one check failed, or <code>--component</code> named an unknown section.</td></tr>
+  </tbody>
+</table>
+<p>Note: <code>--quiet</code> wins over <code>--json</code> — <code>doctor -q --json</code> prints nothing.</p>
+
+<h2 id="gpu">caasi gpu</h2>
+<p>Inspects NVIDIA GPUs by querying <code>nvidia-smi</code> — no NVML bindings, no imports.
+If <code>nvidia-smi</code> is missing or fails, every subcommand exits <code>1</code> with
+<code>Error: GPU information unavailable (…)</code>.</p>
+
+<h3 id="gpu-status">caasi gpu status</h3>
+<p>One-line-per-GPU overview: name, VRAM, utilization, temperature, power, driver/CUDA.</p>
+<pre class="syn"><code>caasi gpu status [--json]</code></pre>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi gpu status</span>
+<span class="out">  GPU  Name                        VRAM              Util  Temp  Power   Driver / CUDA
+  0    NVIDIA GeForce RTX 4090     3111/24564 MiB    12%   46°C  28.6W   550.107.02 / 12.4</span>
+<span class="in">caasi gpu status --json | jq '.gpus[0]["memory.used"]'</span>
+<span class="out">3111</span></span></code></pre>
+<p>JSON payload: <code>{"cuda": "12.4", "gpus": [ … ]}</code>; each GPU object carries
+<code>index</code>, <code>name</code>, <code>driver_version</code>, <code>memory.total</code>,
+<code>memory.used</code>, <code>memory.free</code>, <code>utilization.gpu</code>,
+<code>temperature.gpu</code>, <code>power.draw</code>.</p>
+
+<h3 id="gpu-info">caasi gpu info</h3>
+<p>Static hardware identity per GPU — useful for bug reports and inventory.</p>
+<pre class="syn"><code>caasi gpu info [--json]</code></pre>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi gpu info</span>
+<span class="out">GPU 0
+  Name         NVIDIA GeForce RTX 4090
+  UUID         GPU-9c1e2b34-…
+  Serial       (not available)
+  PCI          00000000:0B:00.0
+  Compute cap. 8.9
+  ECC          Disabled
+  Driver       550.107.02
+  CUDA         12.4</span></span></code></pre>
+
+<h3 id="gpu-memory">caasi gpu memory</h3>
+<p>VRAM overview plus the compute processes currently occupying the GPUs
+(answer “who is eating my VRAM?”).</p>
+<pre class="syn"><code>caasi gpu memory [--json]</code></pre>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi gpu memory</span>
+<span class="out">  GPU  Name                       VRAM               Free
+  0    NVIDIA GeForce RTX 4090    18233/24564 MiB    6331 MiB
+
+  PID    Process                     VRAM
+  48213  /opt/isaac-sim/python.sh    17890 MiB</span>
+<span class="in">caasi gpu memory --json | jq '.compute_apps'</span>
+<span class="out">[ { "gpu_uuid": "GPU-9c1e…", "pid": 48213,
+    "process_name": "/opt/isaac-sim/python.sh", "used_memory_mb": 17890 } ]</span></span></code></pre>
+
+<h3 id="gpu-test">caasi gpu test</h3>
+<p>Proves the GPU actually <em>computes</em>: verifies the driver responds, then runs a tiny
+CUDA matmul in a subprocess via PyTorch. If PyTorch is not importable the compute step is
+skipped with a warning (exit stays 0).</p>
+<pre class="syn"><code>caasi gpu test</code></pre>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi gpu test</span>
+<span class="out">Driver responds; 1 GPU(s) visible.</span>
+<span class="ok">CUDA compute test passed (torch CUDA 12.4).</span>
+<span class="in">caasi gpu test; echo $?</span>
+<span class="out">0</span></span></code></pre>
+<p>Exit codes: <code>0</code> driver ok (and compute passed or skipped), <code>1</code> no
+<code>nvidia-smi</code> or the CUDA compute test failed. No <code>--json</code>.</p>
+
+<h2 id="system">caasi system</h2>
+<p>OS, CPU, RAM and process inspection, read from <code>/proc</code> and standard tools.</p>
+
+<h3 id="system-status">caasi system status</h3>
+<pre class="syn"><code>caasi system status [--json]</code></pre>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi system status</span>
+<span class="out">  OS              Ubuntu 24.04.1 LTS
+  Kernel          6.8.0-45-generic (x86_64)
+  CPU             AMD Ryzen 9 7950X 16-Core Processor (32 cores)
+  Load            1.24 0.98 0.71
+  RAM             62.7 GiB total, 41.2 GiB available
+  NVIDIA GPUs     1
+  Disk free home  412.9 GiB</span></span></code></pre>
+<p>JSON keys: <code>os</code>, <code>kernel</code>, <code>arch</code>, <code>cpu</code>,
+<code>cores</code>, <code>load</code>, <code>ram_total_gib</code>, <code>ram_available_gib</code>,
+<code>gpu_count</code>, <code>disk_free_home</code>. Always exits <code>0</code>.</p>
+
+<h3 id="system-memory">caasi system memory</h3>
+<pre class="syn"><code>caasi system memory [--json]</code></pre>
+<p>Detailed <code>/proc/meminfo</code> breakdown: <code>total_gib</code>,
+<code>available_gib</code>, <code>free_gib</code>, <code>buffers_gib</code>,
+<code>cached_gib</code>, <code>swap_total_gib</code>, <code>swap_free_gib</code>.
+Exits <code>1</code> if <code>/proc/meminfo</code> cannot be read (Linux only).</p>
+
+<h3 id="system-processes">caasi system processes</h3>
+<pre class="syn"><code>caasi system processes [--limit|-n N] [--json]</code></pre>
+<table>
+  <thead><tr><th>Option</th><th>Short</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>--limit</code></td><td><code>-n</code></td><td>int</td><td><code>10</code></td><td>Number of processes to show.</td></tr>
+    <tr><td><code>--json</code></td><td></td><td>flag</td><td>off</td><td>Machine-readable output.</td></tr>
+  </tbody>
+</table>
+<p>Top processes by resident memory — via <code>ps -eo pid,user,pmem,rss,comm --sort=-rss</code>,
+falling back to a <code>/proc</code> scan. JSON is an array of
+<code>{pid, user, mem_percent, rss, command}</code>. Always exits <code>0</code>.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi system processes -n 3</span>
+<span class="out">  PID    User   Mem %  RSS        Command
+  48213  zar    27.4   17890 MiB  python.sh
+  2210   zar    3.1    2013 MiB   code
+  1874   root   0.8    512 MiB    Xorg</span></span></code></pre>
+
+<h2 id="info">caasi info</h2>
+<p>One-screen summary of the CLI itself, your effective configuration, registered tools and
+everything Caasi was able to detect about the ecosystem.</p>
+<pre class="syn"><code>caasi info [--json]</code></pre>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi info</span>
+<span class="out">CLI
+  Name        caasi
+  Version     0.1.0
+  Python      3.11.9 (/home/you/caasi/.venv/bin/python)
+Configuration
+  Language    en
+  Sources     ~/.config/caasi/config.yaml
+Registered tools
+  isaacsim    6.0 → /opt/isaac-sim-6.0
+Ecosystem (detected)
+  Isaac Sim   6.0 (/opt/isaac-sim-6.0)
+  Isaac Lab   (not detected)
+  ROS 2       jazzy
+  CUDA        12.4
+  PyTorch     2.4.0
+  TensorRT    (not detected)</span></span></code></pre>
+<p>JSON payload top-level keys: <code>cli</code> (<code>name</code>, <code>version</code>,
+<code>python</code>, <code>executable</code>, <code>platform</code>), <code>config</code>
+(<code>language</code>, <code>sources</code>), <code>tools</code> (one entry per resolved
+registry tool: <code>version</code>, <code>path</code>, <code>python</code>), and
+<code>ecosystem</code> (<code>isaac_sim</code>, <code>isaac_lab</code>, <code>ros2</code>,
+<code>cuda</code>, <code>pytorch</code>, <code>tensorrt</code> — <code>null</code> when not
+detected). Detection failures are data, never errors: exit code is always <code>0</code>.</p>
+
+<h2 id="version">caasi version</h2>
+<pre class="syn"><code>caasi version [--json]        # or the global flag: caasi --version</code></pre>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi version</span>
+<span class="out">caasi 0.1.0</span>
+<span class="in">caasi version --json</span>
+<span class="out">{
+  "name": "caasi",
+  "version": "0.1.0"
+}</span></span></code></pre>
+
+<div class="page-nav">
+  <a class="prev" href="index.html"><span class="pn-label">Previous</span><span class="pn-title">← Overview</span></a>
+  <a class="next" href="configuration.html"><span class="pn-label">Next</span><span class="pn-title">Configuration →</span></a>
+</div>
+
+<footer class="doc-footer">
+  Caasi CLI 0.1.0 — these pages live in <code>docs/</code> and need no build step.
+  Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
+</footer>
+</main>
+</div>
+<script src="assets/copy.js"></script>
+<script src="assets/sidebar.js"></script>
+</body>
+</html>

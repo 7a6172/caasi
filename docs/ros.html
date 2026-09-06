@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ROS Ecosystem — Caasi CLI Documentation</title>
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/theme.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html">Caa<span>si</span></a>
+  <span class="badge">v0.1.0</span>
+  <span class="tagline">ROS Ecosystem: ros · nav · moveit · control</span>
+  <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
+</header>
+<div class="layout">
+<aside id="sidebar"></aside>
+<main>
+
+<h1>ROS Ecosystem</h1>
+<p class="lead">
+Orchestrate ROS 2, Nav2, MoveIt 2 and ros2_control <strong>by delegating to the real
+<code>ros2</code> CLI</strong> of your installed distro. Caasi never imports rclpy and never
+speaks DDS itself — it finds your distro, builds <code>ros2</code> command lines, and turns every
+long-lived launch into a <a href="runs.html">tracked run</a>.
+</p>
+
+<h2 id="discovery">Distro discovery</h2>
+<p>Every command on this page resolves the distro the same way:</p>
+<ol>
+  <li><code>ROS_DISTRO</code> environment variable → <code>/opt/ros/$ROS_DISTRO</code>;</li>
+  <li>otherwise, scan <code>/opt/ros</code> for a subdirectory containing <code>setup.bash</code>;</li>
+  <li>the <code>ros2</code> binary: <code>&lt;distro&gt;/bin/ros2</code> first, then
+      <code>ros2</code> on <code>PATH</code>.</li>
+</ol>
+<p>You do <strong>not</strong> need to source <code>setup.bash</code> before using Caasi — the
+distro is located directly. When no <code>ros2</code> binary can be found, commands fail with:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi ros list topics</span>
+<span class="err">Error: No ROS 2 installation found (no ros2 CLI). Install ROS 2 or set ROS_DISTRO — see 'caasi setup ros2'.</span></span></code></pre>
+
+<h2 id="ros">caasi ros</h2>
+
+<h3 id="ros-status">caasi ros status</h3>
+<pre class="syn"><code>caasi ros status [--json]</code></pre>
+<p>The one-screen ROS overview: distro, root, binary, RMW implementation and how many topics are
+currently live (a real <code>ros2 topic list</code> call — proves the graph works, not just that
+files exist). Never fails: “not found” is reported as data.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi ros status</span>
+<span class="out">ROS 2
+  Distro     jazzy
+  Root       /opt/ros/jazzy
+  Binary     /opt/ros/jazzy/bin/ros2
+  RMW        (default)
+  Topics     2</span>
+<span class="in">caasi ros status --json</span>
+<span class="out">{ "available": true, "distro": "jazzy", "root": "/opt/ros/jazzy",
+  "binary": "/opt/ros/jazzy/bin/ros2", "rmw": null, "topics": 2 }</span></span></code></pre>
+
+<h3 id="ros-doctor">caasi ros doctor</h3>
+<pre class="syn"><code>caasi ros doctor [--json]</code></pre>
+<p>Runs <code>ros2 doctor</code> (60 s timeout) and mirrors its output and exit code — the real
+health check of your middleware, network and distro setup. JSON mode:
+<code>{"returncode": 0, "output": "…full report…"}</code>.</p>
+
+<h3 id="ros-list">caasi ros list</h3>
+<pre class="syn"><code>caasi ros list KIND [--json]        # KIND: topics | nodes | services | actions</code></pre>
+<p>Thin, uniform wrapper over <code>ros2 topic|node|service|action list</code>:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi ros list topics</span>
+<span class="out">Topics
+  /parameter_events
+  /rosout
+  /scan
+  /tf</span>
+<span class="in">caasi ros list nodes --json</span>
+<span class="out">["/talker", "/listener"]</span>
+<span class="in">caasi ros list topicz</span>
+<span class="err">Error: Unknown kind 'topicz'. Valid kinds: topics, nodes, services, actions.</span></span></code></pre>
+<p>JSON is the raw name array. Empty lists print a “no …” hint, exit <code>0</code>; missing
+<code>ros2</code> exits <code>1</code>.</p>
+
+<h3 id="ros-launch">caasi ros launch</h3>
+<pre class="syn"><code>caasi ros launch TARGET [--package|-p PKG] [--name NAME] [--dry-run] [--json] [-- LAUNCH_ARGS…]</code></pre>
+<table>
+  <thead><tr><th>Parameter</th><th>Kind</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>TARGET</code></td><td>argument</td><td>str</td><td>required</td><td>Launch file path, or (with <code>--package</code>) the launch file name inside a package.</td></tr>
+    <tr><td><code>--package</code></td><td>option (<code>-p</code>)</td><td>str</td><td>—</td><td>Launch from an installed package: <code>ros2 launch &lt;pkg&gt; &lt;target&gt;</code>.</td></tr>
+    <tr><td><code>--name</code></td><td>option</td><td>str</td><td>target stem</td><td>Run name for the tracked run.</td></tr>
+    <tr><td><code>--dry-run</code></td><td>option</td><td>flag</td><td>off</td><td>Show the command without starting.</td></tr>
+    <tr><td><code>--json</code></td><td>option</td><td>flag</td><td>off</td><td>Print the run record.</td></tr>
+    <tr><td>trailing args</td><td>pass-through</td><td></td><td></td><td>Appended verbatim (e.g. <code>use_sim_time:=true</code>).</td></tr>
+  </tbody>
+</table>
+<p>The launch becomes a tracked run (<code>backend: ros</code>, <code>kind: ros</code>) — detached,
+logged, stoppable, surviving your terminal. A path-like target that doesn't exist fails early:
+<code>Error: Launch file not found: &lt;path&gt;</code>.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi ros launch demo.launch.py -p demo_bringup --dry-run</span>
+<span class="out">Dry run — nothing was started:
+  command: /opt/ros/jazzy/bin/ros2 launch demo_bringup demo.launch.py</span>
+<span class="in">caasi ros launch demo.launch.py -p demo_bringup use_sim_time:=true</span>
+<span class="ok">Run 20260905-190411-demo-launch started in the background.</span>
+<span class="dim">  Follow it with: caasi logs 20260905-190411-demo-launch -f</span>
+<span class="in">caasi run stop latest</span></span></code></pre>
+
+<h3 id="ros-topic">caasi ros topic</h3>
+<pre class="syn"><code>caasi ros topic NAME [--echo] [--dry-run] [--json] [-- ECHO_ARGS…]</code></pre>
+<p>Two modes in one command:</p>
+<ul>
+  <li><strong>info</strong> (default): runs <code>ros2 topic info NAME</code> — type, publisher
+      and subscriber counts. Unknown topic →
+      <code>Error: Topic '/nope' not found (is the graph up?).</code> exit 1.
+      JSON: <code>{"topic": "/scan", "info": "Type: sensor_msgs/msg/LaserScan\n…"}</code>.</li>
+  <li><strong>echo</strong> (<code>--echo</code>): streaming would block forever, so it becomes a
+      tracked run (<code>kind: ros</code>) named <code>echo-&lt;topic&gt;</code>. Read the stream
+      with <code>caasi logs</code>, end it with <code>caasi run stop</code>.</li>
+</ul>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi ros topic /scan</span>
+<span class="out">Type: sensor_msgs/msg/LaserScan
+Publisher count: 1
+Subscription count: 0</span>
+<span class="in">caasi ros topic /scan --echo</span>
+<span class="ok">Run 20260905-191022-echo-scan started in the background.</span>
+<span class="in">caasi logs echo-scan -n 4</span>
+<span class="out">---
+header:
+  stamp: {sec: 1757070622, nanosec: 412}
+  frame_id: laser_frame
+range_min: 0.12</span>
+<span class="in">caasi run stop echo-scan</span></span></code></pre>
+
+<h3 id="ros-node">caasi ros node</h3>
+<pre class="syn"><code>caasi ros node NAME [--json]</code></pre>
+<p>Wraps <code>ros2 node info NAME</code> — subscribers, publishers, service clients/servers.
+Unknown node → <code>Error: Node '/nope' not found (is the graph up?).</code> exit 1.
+JSON: <code>{"node": "/talker", "info": "…"}</code>.</p>
+
+<h3 id="ros-graph">caasi ros graph</h3>
+<pre class="syn"><code>caasi ros graph [--json]</code></pre>
+<p>Quick whole-graph snapshot — all nodes and all topics in one view:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi ros graph</span>
+<span class="out">ROS Graph
+  Nodes (2)
+    /listener
+    /talker
+  Topics (4)
+    /parameter_events
+    /rosout
+    /scan
+    /tf</span>
+<span class="in">caasi ros graph --json | jq '.nodes'</span>
+<span class="out">["/listener", "/talker"]</span></span></code></pre>
+
+<h2 id="nav">caasi nav — Nav2</h2>
+<p>Nav2 orchestration on top of the same delegation: Caasi checks that
+<code>nav2_bringup</code> is installed (via <code>ros2 pkg prefix nav2_bringup</code>), starts the
+standard bringup, and tells you whether the navigation stack is actually up — by looking for its
+nodes in the live graph.</p>
+
+<h3 id="nav-status">caasi nav status</h3>
+<pre class="syn"><code>caasi nav status [--json]</code></pre>
+<p>Reports the bringup install prefix and which Nav2 nodes are currently running. Recognized
+nodes: <code>bt_navigator</code>, <code>planner_server</code>, <code>controller_server</code>,
+<code>behavior_server</code>, <code>recoveries_server</code>, <code>smoother_server</code>,
+<code>waypoint_follower</code>, <code>amcl</code>, <code>velocity_smoother</code>.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi nav status</span>
+<span class="out">Nav2
+  Bringup    /opt/ros/jazzy
+  Nodes      /bt_navigator, /planner_server, /controller_server, /amcl</span>
+<span class="in">caasi nav status --json</span>
+<span class="out">{ "installed": true, "bringup": "/opt/ros/jazzy",
+  "nodes": ["/bt_navigator", "/planner_server", "/controller_server", "/amcl"] }</span></span></code></pre>
+
+<h3 id="nav-launch">caasi nav launch</h3>
+<pre class="syn"><code>caasi nav launch [--params FILE] [--map FILE] [--dry-run] [--json] [-- LAUNCH_ARGS…]</code></pre>
+<table>
+  <thead><tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>--params</code></td><td>path</td><td>—</td><td>Params file → launch arg <code>params_file:=&lt;file&gt;</code>.</td></tr>
+    <tr><td><code>--map</code></td><td>path</td><td>—</td><td>Map file → launch arg <code>map:=&lt;file&gt;</code>.</td></tr>
+    <tr><td><code>--dry-run</code></td><td>flag</td><td>off</td><td>Show the command without starting.</td></tr>
+    <tr><td><code>--json</code></td><td>flag</td><td>off</td><td>Print the run record.</td></tr>
+  </tbody>
+</table>
+<p>Starts <code>ros2 launch nav2_bringup bringup_launch.py [map:=…] [params_file:=…]</code> as a
+tracked run named <code>nav2-bringup</code> (<code>kind: nav</code>). Requires
+<code>nav2_bringup</code> to be installed:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi nav launch --map maps/warehouse.yaml --dry-run</span>
+<span class="out">Dry run — nothing was started:
+  command: /opt/ros/jazzy/bin/ros2 launch nav2_bringup bringup_launch.py map:=maps/warehouse.yaml</span>
+<span class="in">caasi nav launch --map maps/warehouse.yaml --params my_nav2_params.yaml</span>
+<span class="ok">Run 20260905-192233-nav2-bringup started in the background.</span>
+<span class="in">caasi logs nav2-bringup -f</span>
+<span class="dim"># …wait for "[INFO] [bt_navigator]: bt_navigator started"…</span></span></code></pre>
+<p>Without Nav2: <code>Error: Nav2 is not installed (no 'nav2_bringup' package). Install it
+(e.g. sudo apt install ros-jazzy-navigation2 ros-jazzy-nav2-bringup) and try again.</code></p>
+
+<h3 id="nav-inspect">caasi nav inspect</h3>
+<pre class="syn"><code>caasi nav inspect [PARAMS_FILE] [--json]</code></pre>
+<p>Lists the nodes configured in a Nav2 params file. With no argument, the distro default is
+used: <code>&lt;bringup prefix&gt;/share/nav2_bringup/params/nav2_params.yaml</code>. Nav2 params
+files are keyed by node name at the top level, so “which nodes will this bring up?” is one
+<code>yaml.safe_load</code> away:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi nav inspect</span>
+<span class="out">Nav2
+  Params     /opt/ros/jazzy/share/nav2_bringup/params/nav2_params.yaml
+  Nodes      14
+    amcl
+    behavior_server
+    bt_navigator
+    controller_server
+    planner_server
+    …</span>
+<span class="in">caasi nav inspect my_params.yaml --json</span>
+<span class="out">{ "path": "my_params.yaml", "nodes": ["amcl", "bt_navigator", "planner_server"] }</span></span></code></pre>
+<p>Missing file → <code>Error: Nav2 params file not found: &lt;path&gt;</code> (exit 1).</p>
+
+<h3 id="nav-test">caasi nav test</h3>
+<pre class="syn"><code>caasi nav test [--json]</code></pre>
+<p>Readiness gate with three checks — <code>ros2</code> binary, <code>nav2_bringup</code> package,
+running Nav2 nodes — and an exit code you can script against:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi nav test</span>
+<span class="ok">✓ ros2              /opt/ros/jazzy/bin/ros2
+✓ nav2_bringup      /opt/ros/jazzy
+✓ nodes             /bt_navigator, /planner_server, /controller_server, /amcl</span>
+<span class="ok">Nav2 is ready.</span>
+<span class="in">caasi nav test --json | jq '.ok'</span>
+<span class="out">true</span></span></code></pre>
+<p>JSON: <code>{"ok": bool, "checks": [{"check", "ok", "detail"}, …]}</code>. Exit
+<code>0</code> when all checks pass, <code>1</code> otherwise.</p>
+
+<h2 id="moveit">caasi moveit — MoveIt 2</h2>
+<p>Same pattern for manipulation: locate <code>moveit_ros_move_group</code>, launch your MoveIt
+config, and verify the <code>move_group</code> node is up. Planning always happens inside MoveIt 2.</p>
+
+<h3 id="moveit-status">caasi moveit status</h3>
+<pre class="syn"><code>caasi moveit status [--json]</code></pre>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi moveit status</span>
+<span class="out">MoveIt 2
+  Package      /opt/ros/jazzy
+  move_group   /move_group</span>
+<span class="in">caasi moveit status --json</span>
+<span class="out">{ "installed": true, "package": "/opt/ros/jazzy",
+  "move_group_nodes": ["/move_group"] }</span></span></code></pre>
+<p>Node detection works even when the package prefix lookup is unavailable — status answers
+“is <code>move_group</code> running <em>right now</em>?” from the live graph.</p>
+
+<h3 id="moveit-launch">caasi moveit launch</h3>
+<pre class="syn"><code>caasi moveit launch TARGET [--package|-p PKG] [--name NAME] [--dry-run] [--json] [-- LAUNCH_ARGS…]</code></pre>
+<p>Identical semantics to <code>ros launch</code> (path check, pass-through args, tracked run —
+<code>kind: moveit</code>), pointed at your MoveIt config's demo launch:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi moveit launch demo.launch.py -p panda_moveit_config</span>
+<span class="ok">Run 20260905-193312-demo-launch started in the background.</span>
+<span class="dim">  Follow it with: caasi logs 20260905-193312-demo-launch -f</span></span></code></pre>
+
+<h3 id="moveit-plan">caasi moveit plan</h3>
+<pre class="syn"><code>caasi moveit plan [--group|-g NAME] [--json]</code></pre>
+<p>Answers “can I plan right now?” — i.e. is a <code>move_group</code> node in the graph? The
+optional <code>--group</code> records which planning group you care about. Exit <code>0</code>
+ready / <code>1</code> not ready:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi moveit plan --group panda_arm</span>
+<span class="ok">move_group is up — planning available (group: panda_arm)</span>
+<span class="in">caasi moveit plan --json</span>
+<span class="out">{ "ready": true, "group": null, "move_group_nodes": ["/move_group"] }</span>
+<span class="in">caasi moveit plan; echo $?</span>
+<span class="err">Error: move_group node is not running. Launch your MoveIt config first (caasi moveit launch …).</span>
+<span class="out">1</span></span></code></pre>
+
+<h3 id="moveit-test">caasi moveit test</h3>
+<pre class="syn"><code>caasi moveit test [--json]</code></pre>
+<p>Three-check readiness gate like <code>nav test</code>: <code>ros2</code> binary,
+<code>moveit_ros_move_group</code> package, live <code>move_group</code> node.
+JSON <code>{"ok", "checks"}</code>, exit <code>0</code>/<code>1</code>.</p>
+
+<h2 id="control">caasi control — ros2_control</h2>
+<p>Controller management via <code>ros2 control</code> (the <code>ros2controlcli</code> package),
+plus offline validation of controller YAML — the #1 source of “why won't my hardware interface
+load”.</p>
+
+<h3 id="control-status">caasi control status</h3>
+<pre class="syn"><code>caasi control status [--json]</code></pre>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi control status</span>
+<span class="out">ros2_control
+  Package             /opt/ros/jazzy
+  Controller managers /controller_manager</span>
+<span class="in">caasi control status --json</span>
+<span class="out">{ "installed": true, "package": "/opt/ros/jazzy",
+  "managers": ["/controller_manager"] }</span></span></code></pre>
+<p><code>managers</code> are the live graph nodes containing <code>controller_manager</code> —
+i.e. the robots/hardware interfaces currently serving controllers.</p>
+
+<h3 id="control-list">caasi control list</h3>
+<pre class="syn"><code>caasi control list [--json]</code></pre>
+<p>Runs <code>ros2 control list_controllers</code> and passes the output through:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi control list</span>
+<span class="out">joint_state_broadcaster    joint_state_broadcaster/JointStateBroadcaster    active
+diff_drive_controller      diff_drive_controller/DiffDriveController        active</span>
+<span class="in">caasi control list --json</span>
+<span class="out">["joint_state_broadcaster    joint_state_broadcaster/JointStateBroadcaster    active", …]</span></span></code></pre>
+<p>Failure (typically <code>ros2controlcli</code> not installed, or no manager reachable) →
+<code>Error: ros2_control CLI is not available (is 'ros2controlcli' installed?).</code> exit 1.</p>
+
+<h3 id="control-check">caasi control check</h3>
+<pre class="syn"><code>caasi control check PARAMS_FILE [--json]</code></pre>
+<p>Static validation of a controller params YAML, offline — no ROS needed. It verifies:</p>
+<ul>
+  <li>the file parses and its top level is a mapping;</li>
+  <li>a <code>controller_manager:</code> node with a <code>ros__parameters:</code> block exists;</li>
+  <li><code>update_rate</code> is set on the controller manager;</li>
+  <li>every controller entry (dict-valued key under <code>ros__parameters</code>) declares a
+      <code>type</code>.</li>
+</ul>
+<pre class="term"><code><span class="t-head">controllers.yaml</span><span class="t-body"><span class="out">controller_manager:
+  ros__parameters:
+    update_rate: 100
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+    diff_drive_controller:
+      type: diff_drive_controller/DiffDriveController</span></span></code></pre>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi control check controllers.yaml</span>
+<span class="ok">✓ joint_state_broadcaster
+✓ diff_drive_controller
+Controller config looks good (2 controller(s)).</span>
+<span class="in">caasi control check broken.yaml --json</span>
+<span class="out">{
+  "path": "broken.yaml",
+  "controllers": ["diff_drive_controller", "broken_controller"],
+  "issues": [
+    "controller_manager.ros__parameters has no 'update_rate'",
+    "controller 'broken_controller' has no 'type'"
+  ],
+  "ok": false
+}</span>
+<span class="err">exit code: 1</span></span></code></pre>
+<p>Missing argument → <code>Error: Pass a controller params YAML file…</code>; missing file →
+params-not-found error; exit <code>0</code> clean / <code>1</code> any issue (both modes).</p>
+
+<h2 id="pattern">The shared pattern</h2>
+<table>
+  <thead><tr><th>You want…</th><th>Use</th></tr></thead>
+  <tbody>
+    <tr><td>“what's on the graph?”</td><td><code>ros status</code> · <code>ros graph</code> · <code>ros list …</code></td></tr>
+    <tr><td>“start something long-lived”</td><td><code>ros launch</code> · <code>nav launch</code> · <code>moveit launch</code> · <code>ros topic --echo</code> → all become tracked runs</td></tr>
+    <tr><td>“is the stack ready?” (scriptable)</td><td><code>nav test</code> · <code>moveit test</code> · <code>moveit plan</code> · <code>control check</code> → exit 0/1 + <code>--json</code></td></tr>
+    <tr><td>“why is my config broken?”</td><td><code>nav inspect</code> · <code>control check</code> · <code>ros doctor</code></td></tr>
+    <tr><td>anything else ROS</td><td><a href="native.html">caasi native ros …</a> — raw <code>ros2</code> pass-through</td></tr>
+  </tbody>
+</table>
+
+<div class="page-nav">
+  <a class="prev" href="review.html"><span class="pn-label">Previous</span><span class="pn-title">← Review</span></a>
+  <a class="next" href="native.html"><span class="pn-label">Next</span><span class="pn-title">Native &amp; Shell →</span></a>
+</div>
+
+<footer class="doc-footer">
+  Caasi CLI 0.1.0 — these pages live in <code>docs/</code> and need no build step.
+  Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
+</footer>
+</main>
+</div>
+<script src="assets/copy.js"></script>
+<script src="assets/sidebar.js"></script>
+</body>
+</html>

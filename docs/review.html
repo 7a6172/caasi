@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review — Caasi CLI Documentation</title>
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/theme.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html">Caa<span>si</span></a>
+  <span class="badge">v0.1.0</span>
+  <span class="tagline">Review: replay · view</span>
+  <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
+</header>
+<div class="layout">
+<aside id="sidebar"></aside>
+<main>
+
+<h1>Review: replay &amp; view</h1>
+<p class="lead">
+Look at results without re-simulating. <code>replay</code> opens recorded run data in an existing
+viewer; <code>view</code> launches viewers directly or attaches one to a run that is still going.
+Caasi never renders anything itself — it orchestrates RViz 2, Foxglove Studio or Open3D, whichever
+you have.
+</p>
+
+<h2 id="viewers">Viewer resolution</h2>
+<p>Both commands support the same three viewers, resolved as follows:</p>
+<table>
+  <thead><tr><th>Viewer</th><th>Binary</th><th>How it is found</th></tr></thead>
+  <tbody>
+    <tr><td><code>rviz</code></td><td><code>rviz2</code></td><td>on <code>PATH</code> (ROS 2 desktop)</td></tr>
+    <tr><td><code>foxglove</code></td><td><code>foxglove</code> / <code>foxglove-studio</code></td><td>on <code>PATH</code></td></tr>
+    <tr><td><code>open3d</code></td><td>the CLI's Python</td><td>pip metadata <code>open3d</code> / <code>open3d-cpu</code></td></tr>
+  </tbody>
+</table>
+<p>When you don't pass <code>--viewer</code>, Caasi auto-detects in the order
+<code>rviz → foxglove → open3d</code>. If none is available:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi replay latest</span>
+<span class="err">Error: No viewer found. Install RViz 2, Foxglove Studio or Open3D first.</span></span></code></pre>
+
+<h2 id="replay">caasi replay</h2>
+<pre class="syn"><code>caasi replay QUERY [--speed FLOAT] [--episode N] [--viewer NAME] [--dry-run] [--json]</code></pre>
+<table>
+  <thead><tr><th>Parameter</th><th>Kind</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>QUERY</code></td><td>argument</td><td>str</td><td>required</td><td>Run id, unique prefix, name or <code>latest</code> (<a href="runs.html#query">query semantics</a>).</td></tr>
+    <tr><td><code>--speed</code></td><td>option</td><td>float</td><td><code>1.0</code></td><td>Replay speed multiplier, exported to the viewer as <code>CAASI_REPLAY_SPEED</code>.</td></tr>
+    <tr><td><code>--episode</code></td><td>option</td><td>int</td><td>—</td><td>Episode to replay, exported as <code>CAASI_REPLAY_EPISODE</code>.</td></tr>
+    <tr><td><code>--viewer</code></td><td>option</td><td>str</td><td>auto</td><td><code>rviz</code>, <code>foxglove</code> or <code>open3d</code>.</td></tr>
+    <tr><td><code>--dry-run</code></td><td>option</td><td>flag</td><td>off</td><td>Show the viewer command and artifacts without launching.</td></tr>
+    <tr><td><code>--json</code></td><td>option</td><td>flag</td><td>off</td><td>Machine-readable result.</td></tr>
+  </tbody>
+</table>
+
+<h3>What counts as “recorded data”</h3>
+<p>Everything in the run directory <em>except</em> the five bookkeeping files
+(<code>manifest.yaml</code>, <code>run.sh</code>, <code>stdout.log</code>,
+<code>stderr.log</code>, <code>exit_code</code>). So any file your script wrote into its run
+directory — trajectories, point clouds, meshes, rosbags — is replayable. A run with no such
+files fails with <code>Error: Run &lt;id&gt; has no recorded data to replay.</code></p>
+
+<h3>How the viewer is launched</h3>
+<ul>
+  <li>Detached (own session, stdio to <code>/dev/null</code>) — closing Caasi does not close the viewer.</li>
+  <li>Environment handed over: <code>CAASI_RUN_DIR=&lt;run dir&gt;</code>,
+      <code>CAASI_REPLAY_SPEED=&lt;speed&gt;</code>, and <code>CAASI_REPLAY_EPISODE</code> when set.
+      RViz/Foxglove setups can read these; ROS bags can be played from <code>$CAASI_RUN_DIR</code>.</li>
+  <li><code>open3d</code> additionally needs a 3D file among the artifacts
+      (<code>.obj .stl .gltf .glb .fbx .off .ply .pcd .pts .xyz .xyzn</code>); the first match is
+      opened with an inline Open3D draw call. Otherwise:
+      <code>Error: No 3D data (.ply/.pcd/.obj/...) found in run &lt;id&gt; for the Open3D viewer.</code></li>
+</ul>
+
+<h3>Examples</h3>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi replay latest --dry-run</span>
+<span class="out">wave (20260905-142301-wave)
+Recorded data: recordings/traj.txt, scan.pcd
+Dry run — nothing was launched:
+  command: rviz2</span>
+<span class="in">caasi replay wave --viewer rviz --speed 0.5</span>
+<span class="ok">Viewer 'rviz' launched (pid 53310).</span>
+<span class="in">caasi replay latest --viewer open3d --json</span>
+<span class="out">{
+  "id": "20260905-142301-wave",
+  "viewer": "open3d",
+  "command": ["/home/you/caasi/.venv/bin/python", "-c", "…", "/home/you/.caasi/runs/20260905-142301-wave/scan.pcd"],
+  "artifacts": ["recordings/traj.txt", "scan.pcd"],
+  "pid": 53344
+}</span></span></code></pre>
+<p>Exit codes: <code>0</code> launched or dry-run; <code>1</code> unknown run, no recorded data,
+unknown/unavailable viewer, or no 3D file for Open3D. <code>pid</code> is absent from JSON in
+dry-run mode.</p>
+
+<h2 id="view">caasi view</h2>
+<p>Direct viewer launchers. All four subcommands support <code>--dry-run</code> (print the
+command instead of launching); none supports <code>--json</code> — except where noted. Launched
+viewers are detached; the reported PID is the viewer's.</p>
+
+<h3 id="view-rviz">caasi view rviz</h3>
+<pre class="syn"><code>caasi view rviz [CONFIG_FILE] [--dry-run]</code></pre>
+<p>Launches <code>rviz2</code>, optionally with a saved layout:
+<code>rviz2 -d my_layout.rviz</code>. Without RViz 2 installed:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi view rviz</span>
+<span class="err">Error: Viewer 'rviz' not found. Install ROS 2 desktop (caasi setup ros2) for rviz2.</span>
+<span class="in">caasi view rviz configs/nav.rviz</span>
+<span class="ok">Viewer 'rviz' launched (pid 53401).</span></span></code></pre>
+
+<h3 id="view-foxglove">caasi view foxglove</h3>
+<pre class="syn"><code>caasi view foxglove [--dry-run]</code></pre>
+<p>Launches Foxglove Studio (<code>foxglove</code> or <code>foxglove-studio</code> on PATH).
+Missing → <code>Error: Viewer 'foxglove' not found. Install Foxglove Studio from
+foxglove.dev.</code></p>
+
+<h3 id="view-open3d">caasi view open3d</h3>
+<pre class="syn"><code>caasi view open3d TARGET [--dry-run]</code></pre>
+<p>Opens one 3D file — mesh formats (<code>.obj .stl .gltf .glb .fbx .off</code>) are read as
+triangle meshes, everything else (<code>.ply .pcd .pts .xyz .xyzn</code>, …) as a point cloud —
+in an inline Open3D viewer. Requires pip <code>open3d</code>; a missing file fails with
+<code>Error: No such file: &lt;path&gt;</code>.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi view open3d /home/you/.caasi/runs/20260905-142301-wave/scan.pcd</span>
+<span class="ok">Viewer 'open3d' launched (pid 53488).</span></span></code></pre>
+
+<h3 id="view-attach">caasi view attach</h3>
+<pre class="syn"><code>caasi view attach QUERY [--viewer NAME] [--dry-run]</code></pre>
+<p>Attaches a viewer to a <strong>live</strong> run — the visualization counterpart to headless
+simulation. The run must be <code>running</code> or <code>paused</code>; anything else fails with
+<code>Error: Run &lt;id&gt; is not running (status: succeeded).</code> Viewer selection works
+exactly like <code>replay</code>, and the viewer receives <code>CAASI_RUN_DIR</code> so live
+outputs (streams, recordings being written) are reachable.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi sim run experiments/wave.yaml</span>
+<span class="ok">Run 20260905-181233-wave started in the background.</span>
+<span class="in">caasi view attach latest</span>
+<span class="ok">Viewer 'rviz' launched (pid 53512).</span>
+<span class="dim"># done watching? the sim keeps running:</span>
+<span class="in">caasi run status latest</span>
+<span class="out">wave (20260905-181233-wave)
+  Status     running</span></span></code></pre>
+
+<div class="callout tip">
+  <div class="c-title">Headless-first in practice</div>
+  <p>Run on the server without a display (<code>sim run</code> is headless by default), then
+  review from your workstation: <code>caasi replay latest --viewer foxglove</code> against the
+  recorded data — or <code>view attach</code> while it still runs. No simulation is ever
+  re-executed for review.</p>
+</div>
+
+<div class="page-nav">
+  <a class="prev" href="data.html"><span class="pn-label">Previous</span><span class="pn-title">← Data &amp; Sensors</span></a>
+  <a class="next" href="ros.html"><span class="pn-label">Next</span><span class="pn-title">ROS Ecosystem →</span></a>
+</div>
+
+<footer class="doc-footer">
+  Caasi CLI 0.1.0 — these pages live in <code>docs/</code> and need no build step.
+  Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
+</footer>
+</main>
+</div>
+<script src="assets/copy.js"></script>
+<script src="assets/sidebar.js"></script>
+</body>
+</html>

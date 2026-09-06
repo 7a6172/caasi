@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Configuration — Caasi CLI Documentation</title>
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/theme.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html">Caa<span>si</span></a>
+  <span class="badge">v0.1.0</span>
+  <span class="tagline">Configuration: files, precedence, tool registry, environment variables</span>
+  <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
+</header>
+<div class="layout">
+<aside id="sidebar"></aside>
+<main>
+
+<h1>Configuration</h1>
+<p class="lead">
+Caasi is configured with layered YAML files. There is no database, no daemon and nothing hidden:
+<code>caasi config show</code> always prints exactly what the CLI will use, and every command reads
+the same merged result.
+</p>
+
+<h2 id="files">Config files &amp; precedence</h2>
+<p>Four file locations are merged, lowest precedence first:</p>
+<table>
+  <thead><tr><th>#</th><th>Source</th><th>Location</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Built-in defaults</td><td>compiled into Caasi</td><td>Sane starting point (see below).</td></tr>
+    <tr><td>2</td><td>Global config</td><td><code>~/.config/caasi/config.yaml</code><br>(or <code>$XDG_CONFIG_HOME/caasi/config.yaml</code>)</td><td>Your machine: tool registry, paths, remotes.</td></tr>
+    <tr><td>3</td><td>Project config</td><td><code>./caasi.yaml</code> (current directory)</td><td>Per-project overrides. Inside a project this is also the project marker file — see <a href="projects.html">Projects</a>.</td></tr>
+    <tr><td>4</td><td><code>CAASI_CONFIG</code></td><td>any path from the env var</td><td>CI / experiment-specific config.</td></tr>
+    <tr><td>5</td><td><code>--config &lt;path&gt;</code></td><td>any path from the flag</td><td>Highest precedence, one-shot override.</td></tr>
+  </tbody>
+</table>
+<p>Merging is a <strong>recursive dict merge</strong>: a project file that sets one key under
+<code>tools:</code> does not wipe the rest of the global registry. After merging, the
+<code>CAASI_LANG</code> environment variable (if set) overrides <code>language</code>.</p>
+
+<div class="callout warn">
+  <div class="c-title">Malformed files</div>
+  <p>A config file that is unreadable, invalid YAML, or whose top level is not a mapping is
+  silently treated as <em>empty</em>. If your settings seem ignored, run <code>caasi config path</code>
+  and <code>caasi config show</code>.</p>
+</div>
+
+<h3>Built-in defaults</h3>
+<pre><code>language: en
+defaults:
+  output: table
+paths:
+  runs: ~/.caasi/runs          # where tracked runs live
+  datasets: ~/.caasi/datasets  # where generated datasets go
+tools: {}                      # the tool registry (see below)</code></pre>
+
+<h3>A complete global config example</h3>
+<pre><code># ~/.config/caasi/config.yaml
+language: en
+paths:
+  runs: /data/caasi-runs        # big disk for logs and artifacts
+tools:
+  isaacsim:
+    default: "6.0"
+    versions:
+      "6.0": { path: /opt/isaac-sim-6.0 }
+      "5.1": { path: /opt/isaac-sim-5.1 }
+  isaaclab:
+    versions:
+      "2.0": { path: /opt/IsaacLab, python: /opt/IsaacLab/_isaac_sim/python.sh }
+remotes:
+  gpu-box:
+    host: 10.0.0.5
+    user: robot
+    port: 2222
+    identity: ~/.ssh/id_ed25519
+    path: ~/experiments          # remote working directory</code></pre>
+
+<h2 id="tools">The tool registry</h2>
+<p>The registry is how you tell Caasi <em>where your installs are</em> — and which version to use
+when you have several side by side (very common with Isaac Sim). It lives under the top-level
+<code>tools:</code> key.</p>
+
+<h3>Multi-version form</h3>
+<pre><code>tools:
+  isaacsim:
+    default: "6.0"              # which version commands resolve to
+    versions:
+      "6.0": { path: /opt/isaac-sim-6.0 }
+      "5.1": { path: /opt/isaac-sim-5.1, python: /opt/isaac-sim-5.1/python.sh }</code></pre>
+
+<h3>Single-install form</h3>
+<pre><code>tools:
+  isaaclab:
+    path: /opt/IsaacLab
+    python: /opt/IsaacLab/_isaac_sim/python.sh   # optional interpreter override</code></pre>
+
+<h3>How a tool is resolved</h3>
+<ol>
+  <li>With the multi-version form, the requested version is used; without one, <code>default</code>;
+      without a default, the <em>first</em> version key in file order.</li>
+  <li>Version keys are compared as strings, so a float <code>6.0</code> default matches the key
+      <code>"6.0"</code>. Quoting version keys in YAML is recommended.</li>
+  <li>Resolution produces <code>{name, version, path, python}</code>; commands then derive their
+      launchers from <code>path</code>: Isaac Sim → <code>&lt;path&gt;/python.sh</code>,
+      Isaac Lab → <code>&lt;path&gt;/isaaclab.sh</code> (unless <code>python</code> is set).</li>
+</ol>
+
+<p>Set registry entries with dotted keys (quote version segments):</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi config set tools.isaacsim.versions."6.0".path /opt/isaac-sim-6.0</span>
+<span class="out">Set tools.isaacsim.versions."6.0".path = /opt/isaac-sim-6.0 (saved to /home/you/.config/caasi/config.yaml)</span>
+<span class="in">caasi config set tools.isaacsim.default "6.0"</span>
+<span class="in">caasi config tools</span>
+<span class="out">  Tool       Default  Versions  Resolved path
+  isaacsim   6.0      6.0       /opt/isaac-sim-6.0</span></span></code></pre>
+
+<h3>Registry vs. environment variables</h3>
+<p>If a tool is not in the registry, Caasi falls back to detection
+(<code>ISAACSIM_PATH</code>/<code>ISAACLAB_PATH</code> env vars, common install locations, pip
+metadata — see <a href="index.html#architecture">Architecture</a>). The registry always wins when
+present, and is the only way to manage multiple versions.</p>
+
+<h2 id="remotes">Remotes</h2>
+<p>The <code>remotes:</code> section defines SSH machines for the
+<a href="remote.html">remote</a> commands:</p>
+<pre><code>remotes:
+  &lt;name&gt;:
+    host: 10.0.0.5            # required — entries without host are ignored
+    user: robot               # optional
+    port: 2222                # optional
+    identity: ~/.ssh/id_ed25519  # optional, ~ is expanded
+    path: ~/experiments       # optional remote working directory</code></pre>
+<p>Commands accept the exact name or any unique prefix (<code>caasi remote run gpu nvidia-smi</code>
+matches <code>gpu-box</code> when unambiguous). Caasi only builds <code>ssh</code> command lines —
+keys, agents and <code>~/.ssh/config</code> are honored because the system <code>ssh</code> client
+does the work.</p>
+
+<h2 id="config-cmd">caasi config</h2>
+<p>Inspect and edit the configuration from the command line.</p>
+
+<h3 id="config-show">caasi config show</h3>
+<pre class="syn"><code>caasi config show [--json]</code></pre>
+<p>Prints the <strong>merged effective configuration</strong> (human mode renders YAML; <code>--json</code>
+emits the same object). This is the ground truth of what Caasi will do.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi config show</span>
+<span class="out">language: en
+defaults:
+  output: table
+paths:
+  runs: ~/.caasi/runs
+  datasets: ~/.caasi/datasets
+tools:
+  isaacsim:
+    default: '6.0'
+    versions:
+      '6.0':
+        path: /opt/isaac-sim-6.0</span></span></code></pre>
+
+<h3 id="config-get">caasi config get</h3>
+<pre class="syn"><code>caasi config get KEY</code></pre>
+<p>Reads one dotted key. Dicts and lists are printed as YAML, scalars as plain text.
+A missing (or null) key exits <code>1</code> with <code>Error: Key '&lt;key&gt;' is not set.</code></p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi config get paths.runs</span>
+<span class="out">~/.caasi/runs</span>
+<span class="in">caasi config get tools.isaacsim.versions</span>
+<span class="out">'6.0':
+  path: /opt/isaac-sim-6.0</span></span></code></pre>
+
+<h3 id="config-set">caasi config set</h3>
+<pre class="syn"><code>caasi config set KEY VALUE</code></pre>
+<ul>
+  <li><code>VALUE</code> is parsed as YAML, so <code>true</code>, <code>42</code> and <code>6.0</code>
+      become bool/number types; anything unparseable stays a string. Quote values you want to keep
+      as strings (<code>caasi config set tools.isaacsim.default '"6.0"'</code>).</li>
+  <li>Intermediate dicts along the dotted path are created automatically.</li>
+  <li>The result is persisted to the <strong>global config file</strong> — and note that
+      <code>set</code> writes the fully merged configuration there, so afterwards the global file
+      contains everything (defaults + project + env overrides folded in).</li>
+</ul>
+
+<h3 id="config-path">caasi config path</h3>
+<pre class="syn"><code>caasi config path</code></pre>
+<p>Shows the four possible sources, which of them are active, and the effective merge order —
+the fastest way to debug “why is my setting ignored?”.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi config path</span>
+<span class="out">  ✓ --config                     (not set)
+  ✓ CAASI_CONFIG                 (not set)
+  ✓ Global config file           /home/you/.config/caasi/config.yaml
+  • Project config file          ./caasi.yaml
+Effective sources in merge order:
+  /home/you/.config/caasi/config.yaml</span></span></code></pre>
+
+<h3 id="config-tools">caasi config tools</h3>
+<pre class="syn"><code>caasi config tools [--json]</code></pre>
+<p>Lists every registered tool with its default version, all versions, and the resolved
+<code>{version, path, python}</code> (or <code>null</code> when unresolvable). With no registry
+entries it prints a usage hint. Always exits <code>0</code>.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi config tools --json | jq '.isaacsim.resolved'</span>
+<span class="out">{
+  "version": "6.0",
+  "path": "/opt/isaac-sim-6.0",
+  "python": null
+}</span></span></code></pre>
+
+<h2 id="env-vars">Environment variables</h2>
+<h3>Consumed by Caasi</h3>
+<table>
+  <thead><tr><th>Variable</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr><td><code>CAASI_CONFIG</code></td><td>Path to an extra config file (merged above global/project).</td></tr>
+    <tr><td><code>CAASI_LANG</code></td><td>Overrides <code>language</code> after merging (e.g. <code>en</code>).</td></tr>
+    <tr><td><code>XDG_CONFIG_HOME</code></td><td>Relocates the global config dir (<code>$XDG_CONFIG_HOME/caasi/config.yaml</code>).</td></tr>
+    <tr><td><code>ISAACSIM_PATH</code></td><td>Fallback Isaac Sim location when the registry has none.</td></tr>
+    <tr><td><code>ISAACLAB_PATH</code></td><td>Fallback Isaac Lab location when the registry has none.</td></tr>
+    <tr><td><code>ROS_DISTRO</code></td><td>Selects the ROS 2 distro (otherwise <code>/opt/ros</code> is scanned).</td></tr>
+    <tr><td><code>RMW_IMPLEMENTATION</code></td><td>Reported by <code>caasi ros status</code> (not modified).</td></tr>
+  </tbody>
+</table>
+
+<h3>Produced for child processes</h3>
+<p>Caasi sets these in the environment of everything it launches — your scripts can rely on them:</p>
+<table>
+  <thead><tr><th>Variable</th><th>Set by</th><th>Content</th></tr></thead>
+  <tbody>
+    <tr><td><code>CAASI_EXPERIMENT</code></td><td><code>sim run</code>, <code>train</code>, <code>benchmark start</code>, <code>dataset generate</code></td><td>Absolute path of the experiment YAML.</td></tr>
+    <tr><td><code>ISAACSIM_PATH</code> / <code>ISAACLAB_PATH</code></td><td><code>sim run</code>, <code>train</code>, … (sim/lab backends)</td><td>Resolved install path.</td></tr>
+    <tr><td><code>CAASI_DATASET_DIR</code></td><td><code>dataset generate</code></td><td>Dataset directory the script should write into (also passed as <code>--dataset-dir</code>).</td></tr>
+    <tr><td><code>CAASI_RUN_DIR</code></td><td><code>replay</code>, <code>view attach</code></td><td>Run directory for the viewer.</td></tr>
+    <tr><td><code>CAASI_REPLAY_SPEED</code>, <code>CAASI_REPLAY_EPISODE</code></td><td><code>replay</code></td><td>Replay parameters exported to the viewer.</td></tr>
+  </tbody>
+</table>
+
+<div class="callout tip">
+  <div class="c-title">Tip — CI</div>
+  <p>Feed a per-job config without touching the machine setup:
+  <code>CAASI_CONFIG=ci/caasi-gpu.yaml caasi sim run exp.yaml</code>, or
+  <code>caasi --config ci/caasi-gpu.yaml sim run exp.yaml</code> for highest precedence.</p>
+</div>
+
+<div class="page-nav">
+  <a class="prev" href="environment.html"><span class="pn-label">Previous</span><span class="pn-title">← Environment</span></a>
+  <a class="next" href="runs.html"><span class="pn-label">Next</span><span class="pn-title">Runs &amp; Logs →</span></a>
+</div>
+
+<footer class="doc-footer">
+  Caasi CLI 0.1.0 — these pages live in <code>docs/</code> and need no build step.
+  Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
+</footer>
+</main>
+</div>
+<script src="assets/copy.js"></script>
+<script src="assets/sidebar.js"></script>
+</body>
+</html>

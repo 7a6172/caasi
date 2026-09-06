@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Native &amp; Shell — Caasi CLI Documentation</title>
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/theme.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html">Caa<span>si</span></a>
+  <span class="badge">v0.1.0</span>
+  <span class="tagline">Advanced: native · shell</span>
+  <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
+</header>
+<div class="layout">
+<aside id="sidebar"></aside>
+<main>
+
+<h1>Native &amp; Shell</h1>
+<p class="lead">
+The escape hatches. <code>caasi native</code> hands your arguments straight to the real tool
+(<code>python.sh</code>, <code>isaaclab.sh</code>, <code>ros2</code>) and mirrors its exit code, so
+Caasi never becomes the thing that blocks you. <code>caasi shell</code> drops you into a shell that
+already has the Isaac environment wired up. Both are foreground commands — they are
+<em>not</em> <a href="runs.html">tracked runs</a>.
+</p>
+
+<div class="callout tip">
+  <div class="c-title">When to use what</div>
+  <p><code>sim run</code> / <code>train</code> / <code>ros launch</code> → background, tracked,
+  logged. <code>native</code> / <code>shell</code> → foreground, exit code mirrored, nothing
+  recorded. Use the escape hatch for one-off probing, odd flags Caasi does not model, and for
+  wiring Caasi into CI where the exit code is the whole contract.</p>
+</div>
+
+<h2 id="native">caasi native</h2>
+<pre class="syn"><code>caasi native sim [ARGS…]        # → &lt;isaacsim&gt;/python.sh   ARGS…
+caasi native lab [ARGS…]        # → &lt;isaaclab&gt;/isaaclab.sh  ARGS…
+caasi native ros [ARGS…]        # → &lt;distro&gt;/bin/ros2       ARGS…
+caasi native run SCRIPT [--tool sim|lab|python] [ARGS…]</code></pre>
+
+<table>
+  <thead><tr><th>Target</th><th>Resolved from</th><th>Executed as</th></tr></thead>
+  <tbody>
+    <tr><td><code>sim</code></td><td><code>tools.isaacsim</code> registry, else <code>ISAACSIM_PATH</code></td><td><code>&lt;path&gt;/python.sh …</code></td></tr>
+    <tr><td><code>lab</code></td><td><code>tools.isaaclab</code> registry, else <code>ISAACLAB_PATH</code></td><td><code>&lt;path&gt;/isaaclab.sh …</code></td></tr>
+    <tr><td><code>ros</code></td><td><code>ROS_DISTRO</code>, else scan <code>/opt/ros</code></td><td><code>&lt;distro&gt;/bin/ros2 …</code> (or <code>ros2</code> on <code>PATH</code>)</td></tr>
+    <tr><td><code>run</code></td><td><code>--tool</code> (see below)</td><td>an interpreter + your script</td></tr>
+  </tbody>
+</table>
+<p>Resolution is the same one every other command uses — see
+<a href="configuration.html#tools">Tool registry</a>. The env var is only consulted as a fallback
+and only accepted if it points at an existing directory.</p>
+
+<h3 id="native-semantics">Execution semantics</h3>
+<ul>
+  <li><strong>Everything is forwarded verbatim.</strong> The <code>sim</code>/<code>lab</code>/<code>ros</code>
+      targets declare no options of their own, so every token after them is passed through
+      untouched — including <code>--help</code>, <code>--json</code> and <code>--verbose</code>.
+      Caasi's own global flags must come <em>before</em> <code>native</code>.</li>
+  <li><strong>Output is captured, then re-printed</strong> (stdout first, then stderr). There is no
+      timeout: Caasi waits as long as the tool runs.</li>
+  <li><strong>The exit code is mirrored.</strong> Whatever the tool exits with, Caasi exits with.
+      A negative code (process killed by a signal) becomes <code>1</code>.</li>
+  <li><strong>No run record, no logs on disk.</strong> If you want those, use
+      <code>caasi sim run</code> / <code>caasi train</code> / <code>caasi ros launch</code>.</li>
+</ul>
+
+<div class="callout warn">
+  <div class="c-title">Captured output ⇒ no live progress</div>
+  <p>Because stdout/stderr are captured and printed at the end, animated progress bars and
+  interactive prompts do not render while the tool runs, and the tool sees pipes rather than a
+  TTY. For interactive sessions use <a href="#shell">caasi shell</a> — or call the tool directly.</p>
+</div>
+
+<h3 id="native-sim">caasi native sim</h3>
+<pre class="syn"><code>caasi native sim [ARGS…]</code></pre>
+<p>Raw Isaac Sim launcher. Useful for one-liners, for flags Caasi does not model, and for
+confirming that a registered install actually works.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi native sim --version</span>
+<span class="out">5.1.0</span>
+<span class="in">caasi native sim -c "import omni.isaac.core; print('core ok')"</span>
+<span class="out">core ok</span>
+<span class="in">caasi native sim ~/work/standalone.py --headless --max_frames 200</span>
+<span class="out">[0.000s] Simulation App Starting...
+...
+[12.418s] app shutdown</span>
+<span class="dim">exit code: 0  (mirrored from python.sh)</span></span></code></pre>
+<p>Nothing registered → error on stderr, exit <code>1</code>:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi native sim --version</span>
+<span class="err">Error: No install for isaacsim found; register one with 'caasi config set tools.isaacsim...'.</span>
+<span class="dim">exit code: 1</span></span></code></pre>
+<p>Fix it once and every Caasi command benefits:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi config set tools.isaacsim.path ~/.local/share/ov/pkg/isaac-sim-5.1.0</span>
+<span class="out">Set tools.isaacsim.path = /home/robot/.local/share/ov/pkg/isaac-sim-5.1.0</span>
+<span class="in">caasi native sim --version</span>
+<span class="out">5.1.0</span></span></code></pre>
+
+<h3 id="native-lab">caasi native lab</h3>
+<pre class="syn"><code>caasi native lab [ARGS…]</code></pre>
+<p>Raw Isaac Lab launcher (<code>isaaclab.sh</code>), so its own subcommands and flags are all
+available.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi native lab --help</span>
+<span class="out">usage: isaaclab.sh [-h] {installconda,activateconda,...} ...</span>
+<span class="in">caasi native lab --install</span>
+<span class="out">[INFO] Installing Isaac Lab extensions...</span>
+<span class="in">caasi native lab -p source/standalone/workflows/rl_games/train.py --headless</span>
+<span class="out">... (this is exactly what 'caasi train' builds for backend lab) ...</span></span></code></pre>
+<p>Unregistered install →
+<code>Error: No install for isaaclab found; register one with 'caasi config set tools.isaaclab...'.</code>
+(exit 1).</p>
+
+<h3 id="native-ros">caasi native ros</h3>
+<pre class="syn"><code>caasi native ros [ARGS…]</code></pre>
+<p>Raw <code>ros2</code> CLI with the distro already located — no need to source
+<code>setup.bash</code> by hand. This is the fallback for any ROS verb that
+<a href="ros.html">caasi ros</a> does not wrap.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi native ros topic list</span>
+<span class="out">/parameter_events
+/rosout
+/cmd_vel</span>
+<span class="in">caasi native ros pkg list | grep nav2_costmap</span>
+<span class="out">nav2_costmap_2d</span>
+<span class="in">caasi native ros service call /global_costmap/get_plan nav2_msgs/srv/GetPlan</span>
+<span class="out">requester: making request: ...</span>
+<span class="in">caasi native ros doctor --report</span>
+<span class="out">   All 5 checks passed</span></span></code></pre>
+<p>No distro → <code>Error: ros2 CLI not found; source a ROS 2 distro first.</code> (exit 1).</p>
+
+<div class="callout note">
+  <div class="c-title">native ros vs. caasi ros</div>
+  <p><code>caasi ros list|topic|node|graph</code> add uniformity, <code>--json</code> and
+  tracked-run behaviour for long-lived things (<code>ros launch</code>, <code>topic --echo</code>).
+  <code>caasi native ros</code> adds nothing but the resolved binary — take it when you want the
+  real thing verbatim.</p>
+</div>
+
+<h3 id="native-run">caasi native run</h3>
+<pre class="syn"><code>caasi native run SCRIPT [--tool sim|lab|python] [ARGS…]</code></pre>
+<p>Run <em>your own script</em> inside a chosen environment, without writing an
+<a href="simulation.html#experiment">experiment YAML</a>.</p>
+<table>
+  <thead><tr><th><code>--tool</code></th><th>Interpreter used</th><th>Command</th></tr></thead>
+  <tbody>
+    <tr><td><code>python</code> <span class="pill info">default</span></td><td>the Python running Caasi</td><td><code>&lt;sys.executable&gt; SCRIPT ARGS…</code></td></tr>
+    <tr><td><code>sim</code></td><td><code>tools.isaacsim.python</code> if set, else the launcher</td><td><code>&lt;python&gt; SCRIPT ARGS…</code> / <code>&lt;isaacsim&gt;/python.sh SCRIPT ARGS…</code></td></tr>
+    <tr><td><code>lab</code></td><td><code>tools.isaaclab.python</code> if set, else the launcher</td><td><code>&lt;python&gt; SCRIPT ARGS…</code> / <code>&lt;isaaclab&gt;/isaaclab.sh -p SCRIPT ARGS…</code></td></tr>
+  </tbody>
+</table>
+<p>Arguments after the script are forwarded untouched; <code>--tool</code> may appear before or
+after the script.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi native run scripts/collect.py --tool sim --headless --count 50</span>
+<span class="out">collecting 50 episodes...
+wrote /home/robot/datasets/demo/metadata.json</span>
+<span class="dim">exit code: 0</span>
+<span class="in">caasi native run scripts/tune.py --tool lab --task Isaac-Velocity-Flat-G1-v0</span>
+<span class="out">[INFO] Task: Isaac-Velocity-Flat-G1-v0</span>
+<span class="in">caasi native run scripts/lint_local.py</span>
+<span class="out">all checks passed</span>
+<span class="dim"># --tool python is the default: plain Python, no Isaac env</span>
+<span class="in">caasi native run scripts/report.py --tool nope</span>
+<span class="err">Error: Unknown --tool 'nope' (expected sim, lab or python).</span>
+<span class="dim">exit code: 1</span></span></code></pre>
+<p>Registering an explicit interpreter avoids launcher overhead and is the recommended setup for
+script-heavy workflows:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi config set tools.isaacsim.python /opt/isaac-sim/python.sh</span>
+<span class="out">Set tools.isaacsim.python = /opt/isaac-sim/python.sh</span>
+<span class="in">caasi native run scripts/collect.py --tool sim</span>
+<span class="dim"># now runs as: /opt/isaac-sim/python.sh scripts/collect.py</span></span></code></pre>
+
+<h3 id="native-exit">Exit codes</h3>
+<table>
+  <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>0</code></td><td>the underlying tool succeeded</td></tr>
+    <tr><td><code>1</code></td><td>Caasi could not resolve a tool (<code>Error: …</code>), bad <code>--tool</code>, or the tool was killed by a signal</td></tr>
+    <tr><td><em>mirrored</em></td><td>the tool's own non-zero exit code (2, 3, 134, …) is returned as-is</td></tr>
+    <tr><td><code>2</code></td><td>Caasi usage error, e.g. missing <code>SCRIPT</code> argument</td></tr>
+  </tbody>
+</table>
+<p>That mirroring is what makes native commands safe in CI:</p>
+<pre class="term"><code><span class="t-head">ci/run.sh</span><span class="t-body"><span class="out">#!/usr/bin/env bash
+set -euo pipefail
+
+caasi doctor || exit 1                      # environment gate
+caasi native run tests/smoke.py --tool sim  # fails the build with the tool's own code
+caasi sim run exps/ci.yaml &amp;&amp; caasi run status latest --json | jq -e '.status == "succeeded"'</span></span></code></pre>
+
+<h2 id="shell">caasi shell</h2>
+<pre class="syn"><code>caasi shell [--command|-c TEXT] [--json]</code></pre>
+<p>Opens a <code>bash</code> session whose environment already knows about your Isaac installs —
+or runs a single command in that environment and returns.</p>
+
+<h3 id="shell-env">What the environment contains</h3>
+<p><code>build_shell_env()</code> starts from your current environment and, for each of
+<code>isaacsim</code> and <code>isaaclab</code> that resolves in the registry:</p>
+<ul>
+  <li>exports <code>ISAACSIM_PATH</code> / <code>ISAACLAB_PATH</code> = the install path;</li>
+  <li>prepends <code>&lt;install&gt;/bin</code> to <code>PATH</code>, when that directory exists.</li>
+</ul>
+<p>Tools that are not registered simply contribute nothing — the shell still opens.</p>
+<div class="callout note">
+  <div class="c-title">It is an env injection, not an activation</div>
+  <p><code>caasi shell</code> does <em>not</em> source <code>setup.bash</code>, <code>setup_python_env.sh</code>
+  or activate a conda env, and it does not set up ROS. For ROS use <code>caasi native ros …</code>
+  or the <a href="ros.html">ros commands</a>, which locate the distro themselves.</p>
+</div>
+
+<h3 id="shell-interactive">Interactive mode</h3>
+<p>Without <code>--command</code>, Caasi replaces its own process with <code>bash</code>
+(<code>os.execvpe</code>). You get a normal, fully interactive shell with a TTY — so editors,
+launchers with GUIs and progress bars all behave. Exiting the shell returns you to your
+<em>original</em> shell; there is nothing left of the Caasi process to return to.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi shell</span>
+<span class="out">robot@ws:~/work$ echo "$ISAACSIM_PATH"</span>
+<span class="out">/home/robot/.local/share/ov/pkg/isaac-sim-5.1.0</span>
+<span class="out">robot@ws:~/work$ command -v python.sh</span>
+<span class="out">/home/robot/.local/share/ov/pkg/isaac-sim-5.1.0/bin/python.sh</span>
+<span class="out">robot@ws:~/work$ exit</span>
+<span class="dim"># back in your original shell — no caasi process involved</span></span></code></pre>
+
+<h3 id="shell-command">--command: one-shot mode</h3>
+<p>Runs <code>bash -c TEXT</code> inside that environment (no timeout), prints stdout then stderr,
+and exits with the command's exit code (negative → <code>1</code>). With <code>--json</code> you get
+the whole result as one object and the exit code is still mirrored:</p>
+<pre class="syn"><code>{ "returncode": 0, "stdout": "…", "stderr": "…" }</code></pre>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi shell -c 'echo "$ISAACSIM_PATH"; echo "$ISAACLAB_PATH"'</span>
+<span class="out">/opt/isaac-sim
+/opt/isaaclab</span>
+<span class="in">caasi shell -c './python.sh -c "import omni.kit.app; print(1)"'</span>
+<span class="out">1</span>
+<span class="in">caasi shell -c 'false'</span>
+<span class="dim">exit code: 1</span>
+<span class="in">caasi shell -c 'python -c "import torch; print(torch.__version__, torch.cuda.is_available())"' --json</span>
+<span class="out">{ "returncode": 0, "stdout": "2.7.0+cu128 true\n", "stderr": "" }</span>
+<span class="in">caasi shell -c 'ls /nope' --json</span>
+<span class="out">{ "returncode": 2, "stdout": "", "stderr": "ls: cannot access '/nope': No such file or directory\n" }</span>
+<span class="dim">exit code: 2</span></span></code></pre>
+<p>One-shot mode is the natural fit for scripting and CI, because the exit code propagates:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi shell -c 'cd "$ISAACLAB_PATH" &amp;&amp; ./isaaclab.sh -p scripts/list_tasks.py' | head -5</span>
+<span class="out">Isaac-Velocity-Flat-G1-v0
+Isaac-Navigation-Flat-G1-v0
+...</span>
+<span class="in">caasi --quiet shell -c 'echo hidden'</span>
+<span class="dim"># --quiet suppresses the re-printed output; the exit code still propagates</span></span></code></pre>
+<div class="callout warn">
+  <div class="c-title">--quiet swallows child output</div>
+  <p>Both <code>native</code> and <code>shell --command</code> re-print captured output through
+  Caasi's printer, which honours the global <code>--quiet</code>. Use <code>--json</code> (always
+  printed, even under <code>--quiet</code>) when a script needs the text.</p>
+</div>
+
+<h3 id="shell-options">Options</h3>
+<table>
+  <thead><tr><th>Option</th><th>Default</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr><td><code>--command</code>, <code>-c</code></td><td><em>none</em></td><td>run this text via <code>bash -c</code> instead of opening a shell; exit code mirrored</td></tr>
+    <tr><td><code>--json</code></td><td><code>false</code></td><td>one-shot mode only: print <code>{returncode, stdout, stderr}</code></td></tr>
+  </tbody>
+</table>
+
+<h2 id="compare">native vs. shell vs. tracked runs</h2>
+<table>
+  <thead><tr><th></th><th><code>caasi native …</code></th><th><code>caasi shell</code></th><th><code>caasi sim run</code> / <code>train</code> / <code>ros launch</code></th></tr></thead>
+  <tbody>
+    <tr><td>Runs in</td><td>foreground</td><td>foreground (or replaces the process)</td><td>background, detached</td></tr>
+    <tr><td>Environment</td><td>exactly the tool's own launcher</td><td><code>ISAACSIM_PATH</code>/<code>ISAACLAB_PATH</code> + <code>bin</code> on <code>PATH</code></td><td>launcher env + your <code>env:</code> block + <code>CAASI_*</code> vars</td></tr>
+    <tr><td>Recorded</td><td>no</td><td>no</td><td>yes — <a href="runs.html">run dir</a> with manifest, <code>run.sh</code>, logs</td></tr>
+    <tr><td>Exit code</td><td>mirrored from the tool</td><td>mirrored (one-shot) / bash's (interactive)</td><td>the launch's; the run's outcome is checked later</td></tr>
+    <tr><td>Best for</td><td>verbatim tool invocations, CI gates</td><td>exploring, multi-step manual work</td><td>anything long, repeatable or worth keeping</td></tr>
+  </tbody>
+</table>
+
+<div class="page-nav">
+  <a class="prev" href="ros.html"><span class="pn-label">Previous</span><span class="pn-title">← ROS Ecosystem</span></a>
+  <a class="next" href="remote.html"><span class="pn-label">Next</span><span class="pn-title">Remote &amp; Container →</span></a>
+</div>
+
+<footer class="doc-footer">
+  Caasi CLI 0.1.0 — these pages live in <code>docs/</code> and need no build step.
+  Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
+</footer>
+</main>
+</div>
+<script src="assets/copy.js"></script>
+<script src="assets/sidebar.js"></script>
+</body>
+</html>

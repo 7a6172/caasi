@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data &amp; Sensors — Caasi CLI Documentation</title>
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/theme.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html">Caa<span>si</span></a>
+  <span class="badge">v0.1.0</span>
+  <span class="tagline">Data: dataset · sensor · vision</span>
+  <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
+</header>
+<div class="layout">
+<aside id="sidebar"></aside>
+<main>
+
+<h1>Data &amp; Sensors</h1>
+<p class="lead">
+Generate simulation datasets as tracked runs, keep them inspectable and portable, discover the
+sensors attached to your machine, and verify the computer-vision stack — all without Caasi ever
+importing a single heavy library.
+</p>
+
+<h2 id="dataset">caasi dataset</h2>
+
+<h3 id="dataset-concept">What a dataset is</h3>
+<p>A dataset is a directory with a <code>metadata.json</code> plus any of the known data
+subdirectories:</p>
+<pre><code>wave-100-20260905-170412/
+├── metadata.json
+├── episodes/       # per-episode recordings
+├── observations/   # agent observations
+├── actions/
+├── rewards/
+├── poses/
+├── images/         # RGB frames (--record-images)
+├── depth/          # depth frames (--record-depth)
+└── lidar/          # point clouds (--record-lidar)</code></pre>
+<p>Datasets are looked for in the project's <code>datasets/</code> directory when you are inside
+a project, otherwise in <code>paths.datasets</code> (default <code>~/.caasi/datasets</code>).
+Directory names follow <code>&lt;name-slug&gt;-&lt;YYYYmmdd-HHMMSS&gt;</code>.</p>
+
+<h3 id="dataset-query">The QUERY argument</h3>
+<p><code>inspect</code>, <code>convert</code> and <code>validate</code> accept:</p>
+<ul>
+  <li>a <strong>path</strong> to any directory containing <code>metadata.json</code>;</li>
+  <li><code>latest</code> / <code>last</code> / <code>newest</code>;</li>
+  <li>a dataset <strong>name</strong> or unique name <strong>prefix</strong>
+      (<code>caasi dataset inspect wave</code>).</li>
+</ul>
+<p>Unknown or ambiguous → <code>Error: No dataset matching '&lt;query&gt;'.</code> (exit 1).</p>
+
+<h3 id="dataset-generate">caasi dataset generate</h3>
+<pre class="syn"><code>caasi dataset generate CONFIG_PATH [--episodes N] [--workers N] [--record-images]
+            [--record-depth] [--record-lidar] [--name NAME] [--dry-run] [-- SCRIPT_ARGS…]</code></pre>
+<table>
+  <thead><tr><th>Parameter</th><th>Kind</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>CONFIG_PATH</code></td><td>argument</td><td>path</td><td>required</td><td>The <a href="simulation.html#experiment">experiment YAML</a> whose script collects the data.</td></tr>
+    <tr><td><code>--episodes</code></td><td>option</td><td>int</td><td>—</td><td>→ script arg <code>--episodes N</code>.</td></tr>
+    <tr><td><code>--workers</code></td><td>option</td><td>int</td><td>—</td><td>→ script arg <code>--workers N</code>.</td></tr>
+    <tr><td><code>--record-images</code></td><td>option</td><td>flag</td><td>off</td><td>→ script arg <code>--record-images</code>.</td></tr>
+    <tr><td><code>--record-depth</code></td><td>option</td><td>flag</td><td>off</td><td>→ script arg <code>--record-depth</code>.</td></tr>
+    <tr><td><code>--record-lidar</code></td><td>option</td><td>flag</td><td>off</td><td>→ script arg <code>--record-lidar</code>.</td></tr>
+    <tr><td><code>--name</code></td><td>option</td><td>str</td><td>experiment name</td><td>Dataset name (dir name gets a timestamp suffix).</td></tr>
+    <tr><td><code>--dry-run</code></td><td>option</td><td>flag</td><td>off</td><td>Show the command; create nothing.</td></tr>
+  </tbody>
+</table>
+<p>What happens on launch:</p>
+<ol>
+  <li>The dataset directory is created and <code>metadata.json</code> is written with
+      <code>status: "generating"</code>, the experiment path, backend, episodes/workers, the
+      record flags and the linked <code>run_id</code>.</li>
+  <li>The script receives <code>--dataset-dir &lt;dir&gt;</code> and the environment variable
+      <code>CAASI_DATASET_DIR</code> — write your collected files there.</li>
+  <li>A detached run (<code>kind: dataset</code>) is started exactly like <code>sim run</code>.</li>
+</ol>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi dataset generate experiments/collect.yaml --episodes 100 --record-images</span>
+<span class="out">Dataset generation started: /home/you/.caasi/datasets/wave-100-20260905-170412
+Run: 20260905-170412-wave — follow it with 'caasi logs 20260905-170412-wave -f'</span></span></code></pre>
+
+<h3 id="dataset-inspect">caasi dataset inspect</h3>
+<pre class="syn"><code>caasi dataset inspect QUERY [--json]</code></pre>
+<p>Shows the metadata, the linked run's live status, and what is actually on disk (file counts
+per subdirectory, total size):</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi dataset inspect latest</span>
+<span class="out">wave-100-20260905-170412
+  /home/you/.caasi/datasets/wave-100-20260905-170412
+  name       wave-100
+  created    2026-09-05T17:04:12+08:00
+  experiment /home/you/demo/experiments/collect.yaml
+  backend    sim
+  episodes   100
+  record     images=True depth=False lidar=False
+  status     generating
+  Run: 20260905-170412-wave (succeeded)
+     Contents
+  Dir           Files
+  episodes      100
+  images        1200</span>
+<span class="in">caasi dataset inspect latest --json | jq '.run'</span>
+<span class="out">{ "id": "20260905-170412-wave", "status": "succeeded" }</span></span></code></pre>
+<p>JSON payload: <code>{"path", "metadata", "contents": {"files", "size", "dirs"}, "run"}</code>;
+<code>run</code> is <code>null</code> when unlinked, or <code>{"id", "status": "unknown"}</code>
+if the run was deleted.</p>
+
+<h3 id="dataset-convert">caasi dataset convert</h3>
+<pre class="syn"><code>caasi dataset convert QUERY [--to jsonl|csv] [--output PATH]</code></pre>
+<p>Builds a portable <strong>index</strong> of every file in the dataset (relative path + size,
+excluding <code>metadata.json</code> and previous indexes) — handy for training pipelines that
+just need a file list:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi dataset convert latest --to csv</span>
+<span class="out">Index written to /home/you/.caasi/datasets/wave-100-20260905-170412/index.csv (1300 file(s)).</span>
+<span class="in">head -3 /home/you/.caasi/datasets/wave-100-20260905-170412/index.csv</span>
+<span class="out">path,size
+episodes/ep_000.json,4213
+images/frame_00000.png,184322</span></span></code></pre>
+<p>Defaults: <code>--to jsonl</code> (one <code>{"path": …, "size": …}</code> object per line),
+output <code>&lt;dataset&gt;/index.&lt;fmt&gt;</code>. Unknown format →
+<code>Error: unknown index format '…' (expected one of jsonl, csv)</code> (exit 1).</p>
+
+<h3 id="dataset-validate">caasi dataset validate</h3>
+<pre class="syn"><code>caasi dataset validate QUERY [--json]</code></pre>
+<p>Structural validation:</p>
+<ul>
+  <li><code>metadata.json</code> exists, is valid JSON and an object;</li>
+  <li><code>name</code> is present;</li>
+  <li>if <code>episodes</code> is an integer and <code>episodes/</code> exists, the file count
+      must match the declared number.</li>
+</ul>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi dataset validate latest --json</span>
+<span class="out">{
+  "path": "/home/you/.caasi/datasets/wave-100-20260905-170412",
+  "valid": false,
+  "issues": ["metadata declares 100 episode(s) but episodes/ contains 97"]
+}</span>
+<span class="err">exit code: 1</span></span></code></pre>
+<p>Exit <code>0</code> valid / <code>1</code> any issue — in both human and JSON mode.</p>
+
+<h2 id="sensor">caasi sensor</h2>
+<p>Discovers sensors by scanning <code>/dev</code>, sysfs and pip metadata — vendor SDKs are
+never imported. Five sensors are known:</p>
+<table>
+  <thead><tr><th>Name</th><th>Kind</th><th>Detected via</th><th>If missing</th></tr></thead>
+  <tbody>
+    <tr><td><code>cameras</code></td><td>video4linux</td><td><code>/dev/video*</code> + <code>/sys/class/video4linux/*/name</code></td><td>hint: <code>v4l2-ctl --list-devices</code></td></tr>
+    <tr><td><code>realsense</code></td><td>depth-camera</td><td>pip package <code>pyrealsense2</code></td><td>hint: <code>pip install pyrealsense2</code></td></tr>
+    <tr><td><code>zed</code></td><td>depth-camera</td><td>directory <code>/usr/local/zed</code></td><td>hint: install the ZED SDK</td></tr>
+    <tr><td><code>lidar</code></td><td>serial</td><td><code>/dev/ttyUSB*</code>, <code>/dev/ttyACM*</code></td><td>hint: connection/udev rules</td></tr>
+    <tr><td><code>isaacsim</code></td><td>simulation</td><td>the usual Isaac Sim detection chain</td><td>hint: <code>caasi setup isaacsim</code></td></tr>
+  </tbody>
+</table>
+
+<h3 id="sensor-list">caasi sensor list</h3>
+<pre class="syn"><code>caasi sensor list [--json]</code></pre>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi sensor list</span>
+<span class="out">  Sensor     Kind          Status        Detail
+  cameras    video4linux   detected      1 device(s)
+  realsense  depth-camera  not detected  pyrealsense2 not installed
+  zed        depth-camera  not detected  ZED SDK not found
+  lidar      serial        not detected  0 serial device(s)
+  isaacsim   simulation    detected      Isaac Sim 6.0 at /opt/isaac-sim-6.0</span>
+<span class="in">caasi sensor list --json | jq '.[0]'</span>
+<span class="out">{ "name": "cameras", "kind": "video4linux", "detected": true,
+  "detail": "1 device(s)", "devices": ["/dev/video0 (Integrated Webcam)"],
+  "hint": "check the device with 'v4l2-ctl --list-devices'" }</span></span></code></pre>
+<p>Always exits <code>0</code> — missing sensors are data, not errors.</p>
+
+<h3 id="sensor-inspect">caasi sensor inspect</h3>
+<pre class="syn"><code>caasi sensor inspect NAME [--json]</code></pre>
+<p>Detail for one sensor (devices list, hint). Exit <code>0</code> even when not detected;
+<code>1</code> for an unknown name (<code>Error: Unknown sensor '&lt;n&gt;'. Valid: cameras,
+realsense, zed, lidar, isaacsim</code>).</p>
+
+<h3 id="sensor-test">caasi sensor test</h3>
+<pre class="syn"><code>caasi sensor test NAME [--json]</code></pre>
+<p>Gating version of <code>inspect</code>: exits <code>0</code> when the sensor is detected,
+<code>1</code> when not — for scripts like:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi sensor test cameras || echo "no camera — using sim sensors"</span>
+<span class="ok">Sensor 'cameras' is available: 1 device(s)</span>
+<span class="in">caasi sensor test lidar --json</span>
+<span class="out">{ "name": "lidar", "ok": false, "detail": "0 serial device(s)" }</span>
+<span class="err">exit code: 1</span></span></code></pre>
+
+<h2 id="vision">caasi vision</h2>
+<p>Diagnoses the computer-vision Python stack. “Installed” means pip metadata is present — the
+package is never imported by <code>status</code>/<code>inspect</code>. Six components, each
+mapped to its import module and candidate distributions:</p>
+<table>
+  <thead><tr><th>Component</th><th>Module</th><th>Distributions checked (in order)</th></tr></thead>
+  <tbody>
+    <tr><td><code>opencv</code></td><td><code>cv2</code></td><td><code>opencv-python</code>, <code>opencv-python-headless</code>, <code>opencv-contrib-python</code></td></tr>
+    <tr><td><code>open3d</code></td><td><code>open3d</code></td><td><code>open3d</code>, <code>open3d-cpu</code></td></tr>
+    <tr><td><code>onnxruntime</code></td><td><code>onnxruntime</code></td><td><code>onnxruntime-gpu</code>, <code>onnxruntime</code></td></tr>
+    <tr><td><code>tensorrt</code></td><td><code>tensorrt</code></td><td><code>tensorrt</code></td></tr>
+    <tr><td><code>pytorch</code></td><td><code>torch</code></td><td><code>torch</code></td></tr>
+    <tr><td><code>pillow</code></td><td><code>PIL</code></td><td><code>pillow</code></td></tr>
+  </tbody>
+</table>
+
+<h3 id="vision-status">caasi vision status</h3>
+<pre class="syn"><code>caasi vision status [--json]</code></pre>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi vision status</span>
+<span class="out">  Component    Status     Version   Module
+  opencv       installed  4.10.0    cv2
+  open3d       installed  0.18.0    open3d
+  onnxruntime  installed  1.19.0    onnxruntime
+  tensorrt     missing    —         tensorrt
+  pytorch      installed  2.4.0     torch
+  pillow       installed  10.4.0    PIL
+  Install missing components with 'pip install &lt;package&gt;'.</span></span></code></pre>
+<p>JSON: array of <code>{"name", "installed", "version", "module"}</code>. Always exits
+<code>0</code>.</p>
+
+<h3 id="vision-inspect">caasi vision inspect</h3>
+<pre class="syn"><code>caasi vision inspect COMPONENT [--json]</code></pre>
+<p>One component in detail, with an install hint when missing. Exit <code>0</code> for known
+names (installed or not); <code>1</code> for unknown names.</p>
+
+<h3 id="vision-test">caasi vision test</h3>
+<pre class="syn"><code>caasi vision test [COMPONENT…] [--python PATH] [--json]</code></pre>
+<p>The real proof: <em>imports</em> each component — in a subprocess, with a 30-second timeout,
+optionally using a different interpreter (<code>--python</code>, default: the CLI's own). This
+catches broken installs that pip metadata alone would happily report as fine.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi vision test</span>
+<span class="ok">opencv: 4.10.0
+open3d: 0.18.0
+onnxruntime: 1.19.0</span>
+<span class="err">tensorrt: missing</span>
+<span class="ok">pytorch: 2.4.0
+pillow: 10.4.0</span>
+<span class="err">exit code: 1</span>
+<span class="in">caasi vision test opencv pytorch --python /opt/IsaacLab/_isaac_sim/python.sh --json</span>
+<span class="out">[ { "name": "opencv", "ok": true, "detail": "4.10.0" },
+  { "name": "pytorch", "ok": true, "detail": "2.4.0" } ]</span></span></code></pre>
+<p>Exit <code>0</code> only if <em>every</em> tested component imports successfully;
+<code>1</code> if any fails, times out, or the name is unknown. No arguments = all six.</p>
+
+<div class="page-nav">
+  <a class="prev" href="training.html"><span class="pn-label">Previous</span><span class="pn-title">← Training</span></a>
+  <a class="next" href="review.html"><span class="pn-label">Next</span><span class="pn-title">Review →</span></a>
+</div>
+
+<footer class="doc-footer">
+  Caasi CLI 0.1.0 — these pages live in <code>docs/</code> and need no build step.
+  Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
+</footer>
+</main>
+</div>
+<script src="assets/copy.js"></script>
+<script src="assets/sidebar.js"></script>
+</body>
+</html>

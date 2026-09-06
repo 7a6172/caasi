@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Training — Caasi CLI Documentation</title>
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/theme.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html">Caa<span>si</span></a>
+  <span class="badge">v0.1.0</span>
+  <span class="tagline">Training: train · benchmark start · benchmark report</span>
+  <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
+</header>
+<div class="layout">
+<aside id="sidebar"></aside>
+<main>
+
+<h1>Training &amp; Benchmarking</h1>
+<p class="lead">
+Headless-first training and physics throughput benchmarks. Both take the same
+<a href="simulation.html#experiment">experiment YAML</a> as <code>sim run</code>, translate
+purpose-built flags into script arguments, and launch the result as a detached
+<a href="runs.html">tracked run</a> you can follow, pause, stop or report on from any terminal.
+</p>
+
+<h2 id="train">caasi train</h2>
+<pre class="syn"><code>caasi train CONFIG_PATH [--steps N] [--envs N] [--resume PATH] [--seed N]
+            [--device TEXT] [--dry-run] [-- SCRIPT_ARGS…]</code></pre>
+<table>
+  <thead><tr><th>Parameter</th><th>Kind</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>CONFIG_PATH</code></td><td>argument</td><td>path</td><td>required</td><td>Experiment YAML (<code>backend:</code> is typically <code>lab</code>).</td></tr>
+    <tr><td><code>--steps</code></td><td>option</td><td>int</td><td>—</td><td>Training steps/iterations → passed to the script as <code>--steps N</code>.</td></tr>
+    <tr><td><code>--envs</code></td><td>option</td><td>int</td><td>—</td><td>Parallel environments → <code>--envs N</code>.</td></tr>
+    <tr><td><code>--resume</code></td><td>option</td><td>path</td><td>—</td><td>Checkpoint to resume from → <code>--resume PATH</code>.</td></tr>
+    <tr><td><code>--seed</code></td><td>option</td><td>int</td><td>—</td><td>Random seed → <code>--seed N</code>.</td></tr>
+    <tr><td><code>--device</code></td><td>option</td><td>str</td><td>—</td><td>e.g. <code>cuda:0</code> → <code>--device cuda:0</code>.</td></tr>
+    <tr><td><code>--dry-run</code></td><td>option</td><td>flag</td><td>off</td><td>Show the launch command without starting.</td></tr>
+    <tr><td>trailing args</td><td>pass-through</td><td></td><td></td><td>Appended verbatim after the translated flags.</td></tr>
+  </tbody>
+</table>
+
+<h3>How flags become script arguments</h3>
+<p>Caasi does not train anything — your script does. <code>train</code> builds the argv in this
+order, keeping only what you provided:</p>
+<pre><code>--steps N  --envs N  --resume PATH  --seed N  --device D  --headless  &lt;your trailing args&gt;</code></pre>
+<p><code>--headless</code> is appended automatically when the experiment YAML has
+<code>headless: true</code> (the default). Interpreter/backend resolution is identical to
+<code>sim run</code> (see <a href="simulation.html#experiment">experiment YAML</a>).</p>
+
+<h3>Example</h3>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi train experiments/ant.yaml --steps 500000 --envs 4096 --device cuda:0 --dry-run</span>
+<span class="out">Dry run — nothing was started:
+  command: /opt/IsaacLab/isaaclab.sh -p /opt/IsaacLab/scripts/train_ant.py --steps 500000 --envs 4096 --device cuda:0 --headless
+  cwd: /home/you/demo/experiments</span>
+<span class="in">caasi train experiments/ant.yaml --steps 500000 --envs 4096</span>
+<span class="ok">Run 20260905-151207-ant-train started in the background.</span>
+<span class="dim">  Follow it with: caasi logs 20260905-151207-ant-train -f</span>
+<span class="in">caasi logs latest -f</span>
+<span class="out">…learning iteration 12/1500  mean reward 87.2 …</span></span></code></pre>
+<p>The run is recorded with <code>kind: train</code> and
+<code>extra: {experiment, steps, envs}</code> in its manifest, so you can tell training runs
+apart in <code>caasi run list --json</code>.</p>
+<div class="callout note">
+  <div class="c-title">No JSON output</div>
+  <p><code>train</code> itself has no JSON mode — use <code>--dry-run</code> to see the command,
+  then <code>caasi run status &lt;id&gt; --json</code> / <code>caasi logs</code> for everything
+  after launch. Exit codes: <code>0</code> launched (or dry-run), <code>1</code> config/backend
+  error. The training outcome surfaces later as the run's <code>succeeded</code>/<code>failed</code>
+  status.</p>
+</div>
+
+<h2 id="benchmark">caasi benchmark</h2>
+<p>Benchmarks answer “how fast is my physics actually stepping?” — no viewport, no rendering,
+just throughput. <code>benchmark start</code> launches the run; <code>benchmark report</code>
+later parses the metrics back out of its log.</p>
+
+<h3 id="benchmark-start">caasi benchmark start</h3>
+<pre class="syn"><code>caasi benchmark start CONFIG_PATH [--envs N] [--steps N] [--dry-run] [-- SCRIPT_ARGS…]</code></pre>
+<table>
+  <thead><tr><th>Parameter</th><th>Kind</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>CONFIG_PATH</code></td><td>argument</td><td>path</td><td>required</td><td>Benchmark experiment YAML.</td></tr>
+    <tr><td><code>--envs</code></td><td>option</td><td>int</td><td>—</td><td>Number of parallel environments → <code>--envs N</code>.</td></tr>
+    <tr><td><code>--steps</code></td><td>option</td><td>int</td><td>—</td><td>Physics steps to benchmark → <code>--steps N</code>.</td></tr>
+    <tr><td><code>--dry-run</code></td><td>option</td><td>flag</td><td>off</td><td>Show the launch command without starting.</td></tr>
+  </tbody>
+</table>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi benchmark start experiments/fps.yaml --envs 4096 --steps 20000</span>
+<span class="ok">Run 20260905-160112-fps started in the background.</span>
+<span class="dim">  When finished: caasi benchmark report 20260905-160112-fps</span></span></code></pre>
+<p>Argv construction mirrors <code>train</code> (<code>--envs</code>, <code>--steps</code>,
+<code>--headless</code>, then pass-through). Run kind: <code>benchmark</code>. Exit codes:
+<code>0</code> launched / dry-run, <code>1</code> config error.</p>
+
+<h3 id="benchmark-report">caasi benchmark report</h3>
+<pre class="syn"><code>caasi benchmark report QUERY [--json]</code></pre>
+<p>Reads the run's <code>stdout.log</code> and extracts metrics using two conventions — your
+benchmark script can use either (or both):</p>
+<ol>
+  <li><strong>Explicit metric lines</strong> (recommended): print
+      <code>caasi_metric &lt;name&gt;=&lt;value&gt;</code> anywhere in a line. Names allow
+      letters, digits, <code>_ . -</code>; values are ints/floats (exponents ok).</li>
+  <li><strong>Common labelled lines</strong>: <code>Simulation FPS: 241.5</code>,
+      <code>Steps/sec: 61696</code>, <code>Real-time factor: 12.3</code>,
+      <code>GPU utilization: 94 %</code>, <code>GPU memory: 17890</code> — recognized labels are
+      normalized to <code>simulation_fps</code>, <code>steps_per_sec</code>,
+      <code>real_time_factor</code>, <code>gpu_utilization</code>, <code>gpu_memory</code>.</li>
+</ol>
+
+<h4>Example benchmark script output</h4>
+<pre><code># inside your benchmark script:
+print(f"caasi_metric simulation_fps={fps:.1f}")
+print(f"caasi_metric steps_per_sec={sps}")
+# …or simply:
+print("Simulation FPS: 241.5")</code></pre>
+
+<h4>Report</h4>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi benchmark report latest</span>
+<span class="out">fps (20260905-160112-fps) — succeeded
+      Benchmark Metrics
+  Metric              Value
+  simulation_fps      241.5
+  steps_per_sec       61696
+  real_time_factor    12.3</span>
+<span class="in">caasi benchmark report latest --json</span>
+<span class="out">{
+  "id": "20260905-160112-fps",
+  "status": "succeeded",
+  "metrics": {
+    "simulation_fps": 241.5,
+    "steps_per_sec": 61696.0,
+    "real_time_factor": 12.3
+  }
+}</span></span></code></pre>
+<p>Reporting on a run that is still <code>running</code>/<code>paused</code> warns
+<code>Still running — metrics may be incomplete.</code> but proceeds. If no metrics are found
+you get a hint about the two conventions.</p>
+
+<h4>Exit codes</h4>
+<table>
+  <thead><tr><th>Situation</th><th>Exit</th></tr></thead>
+  <tbody>
+    <tr><td>Metrics parsed (or still-running report), run not failed</td><td><code>0</code></td></tr>
+    <tr><td>Run status is <code>failed</code> (JSON mode or no-metrics mode)</td><td><code>1</code></td></tr>
+    <tr><td>Run not found</td><td><code>1</code></td></tr>
+  </tbody>
+</table>
+
+<h3 id="benchmark-workflow">Full workflow</h3>
+<pre class="term"><code><span class="t-head">experiments/fps.yaml</span><span class="t-body"><span class="out">name: fps-bench
+backend: lab
+script: source/standalone/benchmarks/throughput.py
+headless: true</span></span></code></pre>
+<pre class="term"><code><span class="t-head">shell — compare two environment counts</span><span class="t-body"><span class="in">caasi benchmark start experiments/fps.yaml --envs 1024 --steps 20000</span>
+<span class="ok">Run 20260905-161204-fps-bench started in the background.</span>
+<span class="in">while [ "$(caasi run status fps-bench --json | jq -r .status)" = "running" ]; do sleep 5; done</span>
+<span class="in">caasi benchmark report fps-bench --json | jq .metrics</span>
+<span class="out">{ "simulation_fps": 241.5, "steps_per_sec": 61696.0 }</span>
+<span class="in">caasi benchmark start experiments/fps.yaml --envs 4096 --steps 20000</span>
+<span class="ok">Run 20260905-162011-fps-bench started in the background.</span>
+<span class="in">caasi benchmark report latest</span>
+<span class="out">fps-bench (20260905-162011-fps-bench) — succeeded
+  Metric              Value
+  simulation_fps      612.4
+  steps_per_sec       156774</span></span></code></pre>
+<p>The run name always comes from the experiment's <code>name:</code> field —
+<code>benchmark start</code> has no <code>--name</code> flag — so that name is a stable query, and
+<code>latest</code> always means the newest run.</p>
+
+<div class="page-nav">
+  <a class="prev" href="simulation.html"><span class="pn-label">Previous</span><span class="pn-title">← Simulation</span></a>
+  <a class="next" href="data.html"><span class="pn-label">Next</span><span class="pn-title">Data &amp; Sensors →</span></a>
+</div>
+
+<footer class="doc-footer">
+  Caasi CLI 0.1.0 — these pages live in <code>docs/</code> and need no build step.
+  Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
+</footer>
+</main>
+</div>
+<script src="assets/copy.js"></script>
+<script src="assets/sidebar.js"></script>
+</body>
+</html>

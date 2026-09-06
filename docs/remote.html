@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Remote &amp; Container — Caasi CLI Documentation</title>
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/theme.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html">Caa<span>si</span></a>
+  <span class="badge">v0.1.0</span>
+  <span class="tagline">Advanced: remote · container</span>
+  <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
+</header>
+<div class="layout">
+<aside id="sidebar"></aside>
+<main>
+
+<h1>Remote &amp; Container</h1>
+<p class="lead">
+Same workflows, different machine. <code>caasi remote</code> drives the system <code>ssh</code>
+client to run experiments on a GPU box; <code>caasi container</code> drives <code>docker</code> or
+<code>podman</code> to run them inside an official image. Caasi implements no protocol and links no
+SDK — it builds command lines, and every long-running one becomes a
+<a href="runs.html">tracked run</a>.
+</p>
+
+<h2 id="remote">caasi remote</h2>
+
+<h3 id="remote-config">Declaring remotes</h3>
+<p>Remotes live in your <a href="configuration.html#files">configuration</a> — global
+(<code>~/.config/caasi/config.yaml</code>) or per-project (<code>./caasi.yaml</code>):</p>
+<pre class="term"><code><span class="t-head">~/.config/caasi/config.yaml</span><span class="t-body"><span class="out">remotes:
+  gpu-box:
+    host: 192.168.1.50
+    user: robot
+    port: 22
+    identity: ~/.ssh/id_ed25519
+    path: ~/experiments
+  cloud-a100:
+    host: a100.example.com
+    user: ubuntu
+    identity: ~/.ssh/cloud.pem</span></span></code></pre>
+<table>
+  <thead><tr><th>Field</th><th>Required</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>host</code></td><td><span class="pill ok">yes</span></td><td>hostname or IP — entries without it are skipped entirely</td></tr>
+    <tr><td><code>user</code></td><td>no</td><td>SSH user; with it the target becomes <code>user@host</code></td></tr>
+    <tr><td><code>port</code></td><td>no</td><td>adds <code>-p PORT</code></td></tr>
+    <tr><td><code>identity</code></td><td>no</td><td>key file, <code>~</code> expanded, adds <code>-i FILE</code></td></tr>
+    <tr><td><code>path</code></td><td>no</td><td>working directory for <code>remote run</code> (<code>cd PATH &amp;&amp; …</code>); shown by <code>remote list</code></td></tr>
+  </tbody>
+</table>
+<p>Add one from the command line without editing YAML:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi config set remotes.gpu-box.host 192.168.1.50</span>
+<span class="out">Set remotes.gpu-box.host = 192.168.1.50</span>
+<span class="in">caasi config set remotes.gpu-box.user robot</span>
+<span class="out">Set remotes.gpu-box.user = robot</span>
+<span class="in">caasi config set remotes.gpu-box.path '~/experiments'</span>
+<span class="out">Set remotes.gpu-box.path = ~/experiments</span></span></code></pre>
+<div class="callout note">
+  <div class="c-title">Name resolution</div>
+  <p>Every command that takes <code>NAME</code> accepts the exact name or a
+  <strong>unique prefix</strong>: with <code>gpu-box</code> and <code>cloud-a100</code> configured,
+  <code>caasi remote connect gpu</code> resolves to <code>gpu-box</code>. An ambiguous or unknown
+  query fails with <code>Error: No remote machine matching 'g' (configured: gpu-box, cloud-a100).</code>
+  and exit <code>1</code>.</p>
+</div>
+
+<h3 id="remote-list">caasi remote list</h3>
+<pre class="syn"><code>caasi remote list [--json]</code></pre>
+<p>Prints the configured machines: target, port and working directory.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi remote list</span>
+<span class="out">Remote machines
+  gpu-box          robot@192.168.1.50:22  ~/experiments
+  cloud-a100       ubuntu@a100.example.com</span>
+<span class="in">caasi remote list --json</span>
+<span class="out">[
+  { "name": "gpu-box", "host": "192.168.1.50", "user": "robot",
+    "port": 22, "identity": "~/.ssh/id_ed25519", "path": "~/experiments" },
+  { "name": "cloud-a100", "host": "a100.example.com", "user": "ubuntu",
+    "port": null, "identity": "~/.ssh/cloud.pem", "path": null }
+]</span></span></code></pre>
+<p>Nothing configured is not an error — it is a hint:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi remote list</span>
+<span class="warn">No remote machines configured; add one with 'caasi config set remotes.&lt;name&gt;.host &lt;host&gt;'.</span></span></code></pre>
+
+<h3 id="remote-connect">caasi remote connect</h3>
+<pre class="syn"><code>caasi remote connect NAME [--command|-c TEXT] [--dry-run]</code></pre>
+<p>Builds the <code>ssh</code> invocation from the machine entry:</p>
+<pre class="syn"><code>ssh [-p PORT] [-i IDENTITY] [USER@]HOST [COMMAND]</code></pre>
+<table>
+  <thead><tr><th>Option</th><th>Default</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr><td><code>--command</code>, <code>-c</code></td><td><em>none</em></td><td>run one command instead of an interactive session; output captured, exit code mirrored</td></tr>
+    <tr><td><code>--dry-run</code></td><td><code>false</code></td><td>print the exact <code>ssh</code> command line and do nothing</td></tr>
+  </tbody>
+</table>
+<p><strong>Interactive</strong> (no <code>-c</code>): Caasi prints
+<code>Opening interactive session to robot@192.168.1.50...</code> and then <em>replaces its own
+process</em> with <code>ssh</code> (<code>os.execvp</code>). You get a real TTY — password prompts,
+<code>tmux</code>, <code>htop</code>, GUI forwarding all work exactly as with plain
+<code>ssh</code>. Exiting returns you to your original shell.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi remote connect gpu-box --dry-run</span>
+<span class="out">Dry run — nothing was launched:
+  command: ssh -p 22 -i /home/robot/.ssh/id_ed25519 robot@192.168.1.50</span>
+<span class="in">caasi remote connect gpu-box</span>
+<span class="out">Opening interactive session to robot@192.168.1.50...
+robot@gpu-box:~$ nvidia-smi --query-gpu=name --format=csv,noheader
+NVIDIA A100-SXM4-80GB
+robot@gpu-box:~$ exit</span></span></code></pre>
+<p><strong>Batch</strong> (<code>-c</code>): one command, output printed, exit code mirrored
+(negative → <code>1</code>) — ideal for checks and scripts:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi remote connect gpu-box -c 'nvidia-smi --query-gpu=name,memory.total --format=csv,noheader'</span>
+<span class="out">NVIDIA A100-SXM4-80GB, 81920 MiB</span>
+<span class="in">caasi remote connect gpu-box -c 'df -h ~/experiments | tail -1'</span>
+<span class="out">/dev/nvme0n1p1  1.8T  640G  1.1T  37% /home/robot/experiments</span>
+<span class="in">caasi remote connect gpu-box -c 'test -f ~/experiments/train.py'</span>
+<span class="dim">exit code: 1   # file missing — the remote exit code, mirrored</span></span></code></pre>
+<div class="callout tip">
+  <div class="c-title">Your SSH setup still applies</div>
+  <p>Because Caasi only orchestrates the system <code>ssh</code>, everything in
+  <code>~/.ssh/config</code> (jump hosts, agent forwarding, keep-alives, host aliases) and your
+  ssh-agent work unchanged. You can even set <code>host</code> to an <code>~/.ssh/config</code>
+  alias.</p>
+</div>
+
+<h3 id="remote-run">caasi remote run</h3>
+<pre class="syn"><code>caasi remote run NAME [--dry-run] [--json] -- COMMAND [ARGS…]</code></pre>
+<p>Starts a command on the remote machine as a <strong>detached, tracked run</strong>. Everything
+after <code>NAME</code> (and after Caasi's own flags) is the remote command:</p>
+<pre class="syn"><code>ssh [-p PORT] [-i IDENTITY] [USER@]HOST  "cd &lt;path&gt; &amp;&amp; &lt;your command&gt;"</code></pre>
+<p>The <code>cd</code> is only added when the machine declares a <code>path</code>; arguments are
+quoted with <code>shlex.join</code>, so spaces and globs survive the trip.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi remote run gpu-box --dry-run python train.py --headless --steps 10000</span>
+<span class="out">Dry run — nothing was launched:
+  command: ssh -p 22 -i /home/robot/.ssh/id_ed25519 robot@192.168.1.50 cd ~/experiments &amp;&amp; python train.py --headless --steps 10000</span>
+<span class="in">caasi remote run gpu-box python train.py --headless --steps 10000</span>
+<span class="ok">Remote run started: 20260905-142310-gpu-box-python.</span>
+<span class="dim">Follow it with: caasi logs 20260905-142310-gpu-box-python -f</span></span></code></pre>
+<p>A run with no command is refused rather than silently opening a session:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi remote run gpu-box</span>
+<span class="err">Error: Provide a command to run, e.g.: caasi remote run &lt;name&gt; python train.py</span>
+<span class="dim">exit code: 1</span></span></code></pre>
+<p>The record it creates:</p>
+<table>
+  <thead><tr><th>Field</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td><code>name</code></td><td><code>&lt;machine&gt;-&lt;first token of your command&gt;</code> → <code>gpu-box-python</code></td></tr>
+    <tr><td><code>backend</code> / <code>kind</code></td><td><code>ssh</code> / <code>remote</code></td></tr>
+    <tr><td><code>extra</code> (manifest only)</td><td><code>{remote: gpu-box, remote_command: "python train.py --headless --steps 10000"}</code></td></tr>
+    <tr><td><code>pid</code></td><td>the local <code>ssh</code> client's PID — that is what <code>run stop</code> signals</td></tr>
+  </tbody>
+</table>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi remote run gpu-box python train.py --headless --json</span>
+<span class="out">{
+  "id": "20260905-143012-gpu-box-python",
+  "name": "gpu-box-python",
+  "backend": "ssh",
+  "kind": "remote",
+  "command": ["ssh", "-p", "22", "-i", "/home/robot/.ssh/id_ed25519",
+              "robot@192.168.1.50", "cd ~/experiments &amp;&amp; python train.py --headless"],
+  "cwd": "/home/robot/work",
+  "created": "2026-09-05T14:30:12+08:00",
+  "pid": 48213,
+  "paused": false,
+  "stopped": false,
+  "directory": "/home/robot/.caasi/runs/20260905-143012-gpu-box-python",
+  "status": "running"
+}</span></span></code></pre>
+<p>From here the whole <a href="runs.html">run toolbox</a> applies — the logs are the ssh stream,
+written locally as it arrives:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi logs gpu-box-python -f</span>
+<span class="out">epoch 1/50  loss 2.41  fps 812
+epoch 2/50  loss 1.98  fps 830
+^C</span>
+<span class="in">caasi run status gpu-box-python</span>
+<span class="out">Run gpu-box-python
+  Id        20260905-142310-gpu-box-python
+  Status    running
+  Backend   ssh   Kind remote   Pid 48122</span>
+<span class="in">caasi run stop gpu-box-python</span>
+<span class="out">Run 20260905-142310-gpu-box-python stopped.</span></span></code></pre>
+<div class="callout warn">
+  <div class="c-title">The run is the ssh connection</div>
+  <p>Caasi tracks the local <code>ssh</code> process, so the run ends when the connection ends —
+  and a dropped link can leave the remote process running while the local run is marked
+  <code>failed</code>. For long training jobs, start them inside <code>tmux</code>/<code>nohup</code>
+  on the remote side and poll instead:</p>
+  <pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi remote connect gpu-box -c 'cd ~/experiments &amp;&amp; nohup python train.py --headless &gt; train.log 2&gt;&amp;1 &amp; echo $!'</span>
+<span class="out">51244</span>
+<span class="in">caasi remote connect gpu-box -c 'tail -3 ~/experiments/train.log'</span>
+<span class="out">epoch 47/50  loss 0.31  fps 841</span></span></code></pre>
+</div>
+
+<h2 id="container">caasi container</h2>
+<p>Runtime discovery is one line: <code>docker</code> on <code>PATH</code>, else
+<code>podman</code>. If neither exists, <code>list</code> says so in yellow, <code>check</code>
+fails, and <code>run</code> exits <code>1</code> with
+<code>Error: No container tool found; install Docker or Podman first.</code></p>
+
+<h3 id="container-list">caasi container list</h3>
+<pre class="syn"><code>caasi container list [--json]</code></pre>
+<p>Shows the well-known Isaac images (repository references, tags deliberately not pinned) plus
+whatever Isaac-related image you already have locally.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi container list</span>
+<span class="out">Containers  (tool: docker)
+  Known images:
+    nvcr.io/nvidia/isaac-sim             NVIDIA Isaac Sim (NGC)
+    nvcr.io/nvidia/isaac-lab             NVIDIA Isaac Lab (NGC)
+  Local Isaac images:
+    nvcr.io/nvidia/isaac-sim:5.1.0
+    nvcr.io/nvidia/isaac-lab:2.3.0</span>
+<span class="in">caasi container list --json</span>
+<span class="out">{
+  "tool": "/usr/bin/docker",
+  "known": ["nvcr.io/nvidia/isaac-sim", "nvcr.io/nvidia/isaac-lab"],
+  "local": ["nvcr.io/nvidia/isaac-sim:5.1.0", "nvcr.io/nvidia/isaac-lab:2.3.0"]
+}</span></span></code></pre>
+<p>Local images come from
+<code>&lt;tool&gt; image ls --format '{{.Repository}}:{{.Tag}}'</code>, keeping only entries whose
+name contains <code>isaac</code>, <code>isaacsim</code> or <code>isaaclab</code> (dangling
+<code>&lt;none&gt;</code> tags are dropped). Nothing pulled yet →
+<code>(none pulled yet)</code>; no runtime → <code>"tool": null</code> and
+<code>"local": []</code> in JSON.</p>
+
+<h3 id="container-check">caasi container check</h3>
+<pre class="syn"><code>caasi container check [--json]</code></pre>
+<p>Readiness gate for GPU containers — three checks, run in order, each 20 s timeout:</p>
+<table>
+  <thead><tr><th>Check</th><th>Passes when</th><th>Detail on failure</th></tr></thead>
+  <tbody>
+    <tr><td><code>tool</code></td><td><code>docker</code> or <code>podman</code> is on <code>PATH</code></td><td><code>No container tool found; install Docker or Podman first.</code></td></tr>
+    <tr><td><code>daemon</code></td><td><code>&lt;tool&gt; info</code> exits 0</td><td><code>daemon is not responding</code> — is the service started? are you in the <code>docker</code> group?</td></tr>
+    <tr><td><code>nvidia-runtime</code></td><td><code>&lt;tool&gt; info</code> mentions <code>nvidia</code></td><td><code>NVIDIA runtime missing (install nvidia-container-toolkit)</code></td></tr>
+  </tbody>
+</table>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi container check</span>
+<span class="ok">✓ tool              /usr/bin/docker
+✓ daemon            daemon is responding
+✓ nvidia-runtime    NVIDIA runtime available
+Container stack is ready.</span>
+<span class="dim">exit code: 0</span>
+<span class="in">caasi container check --json</span>
+<span class="out">{ "ok": false, "checks": [
+    { "check": "tool", "ok": true, "detail": "/usr/bin/docker" },
+    { "check": "daemon", "ok": true, "detail": "daemon is responding" },
+    { "check": "nvidia-runtime", "ok": false,
+      "detail": "NVIDIA runtime missing (install nvidia-container-toolkit)" } ] }</span>
+<span class="err">exit code: 1</span></span></code></pre>
+<p>The <code>nvidia-runtime</code> check is skipped (reported <code>false</code>) when the daemon is
+down. Exit <code>0</code> only when all three pass, in both human and JSON mode — so it composes:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi container check &amp;&amp; caasi container run nvcr.io/nvidia/isaac-sim:5.1.0 ./runheadless.sh</span></code></pre>
+
+<h3 id="container-run">caasi container run</h3>
+<pre class="syn"><code>caasi container run IMAGE [--gpus all] [--dry-run] [--json] [CONTAINER COMMAND…]</code></pre>
+<p>Builds and launches, as a tracked run:</p>
+<pre class="syn"><code>&lt;docker|podman&gt; run --rm [--gpus VALUE] IMAGE [CONTAINER COMMAND…]</code></pre>
+<table>
+  <thead><tr><th>Option</th><th>Default</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr><td><code>--gpus</code></td><td><code>all</code></td><td>value passed to <code>--gpus</code> (<code>all</code>, <code>2</code>, <code>device=0,1</code>). Pass <code>--gpus ""</code> to omit the flag and run without GPU access</td></tr>
+    <tr><td><code>--dry-run</code></td><td><code>false</code></td><td>print the command, start nothing</td></tr>
+    <tr><td><code>--json</code></td><td><code>false</code></td><td>print the full run record</td></tr>
+  </tbody>
+</table>
+<p>The container is always started with <code>--rm</code>, so it cleans itself up when the run
+ends. The run is named after the image: last path component, <code>:</code> → <code>-</code>
+(<code>nvcr.io/nvidia/isaac-sim:5.1.0</code> → <code>isaac-sim-5.1.0</code>), with
+<code>backend: container</code>, <code>kind: container</code> and
+<code>extra: {image, gpus}</code> in the manifest.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi container run nvcr.io/nvidia/isaac-sim:5.1.0 --dry-run ./runheadless.sh --allow-root</span>
+<span class="out">Dry run — nothing was launched:
+  command: /usr/bin/docker run --rm --gpus all nvcr.io/nvidia/isaac-sim:5.1.0 ./runheadless.sh --allow-root</span>
+<span class="in">caasi container run nvcr.io/nvidia/isaac-sim:5.1.0 ./runheadless.sh --allow-root</span>
+<span class="ok">Container run started: 20260905-150211-isaac-sim-5-1-0.</span>
+<span class="dim">Follow it with: caasi logs 20260905-150211-isaac-sim-5-1-0 -f</span>
+<span class="in">caasi container run nvcr.io/nvidia/isaac-lab:2.3.0 --gpus device=0 --json</span>
+<span class="out">{
+  "id": "20260905-150433-isaac-lab-2-3-0",
+  "name": "isaac-lab-2.3.0",
+  "backend": "container",
+  "kind": "container",
+  "command": ["/usr/bin/docker", "run", "--rm", "--gpus", "device=0",
+              "nvcr.io/nvidia/isaac-lab:2.3.0"],
+  "cwd": "/home/robot/work",
+  "created": "2026-09-05T15:04:33+08:00",
+  "pid": 51902,
+  "paused": false,
+  "stopped": false,
+  "directory": "/home/robot/.caasi/runs/20260905-150433-isaac-lab-2-3-0",
+  "status": "running"
+}</span></span></code></pre>
+<div class="callout warn">
+  <div class="c-title">Everything after IMAGE is the container's command</div>
+  <p>Caasi models the two flags that matter for GPU experiments (<code>--rm</code>,
+  <code>--gpus</code>). Tokens after the image go to the container's entrypoint, not to
+  <code>docker</code> — so volumes, ports and <code>-e</code> are <em>not</em> supported here.
+  When you need them, generate the base line with <code>--dry-run</code> and extend it yourself:</p>
+  <pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi container run nvcr.io/nvidia/isaac-sim:5.1.0 --dry-run</span>
+<span class="out">Dry run — nothing was launched:
+  command: /usr/bin/docker run --rm --gpus all nvcr.io/nvidia/isaac-sim:5.1.0</span>
+<span class="in">docker run --rm --gpus all -v "$PWD":/work -p 8211:8211 nvcr.io/nvidia/isaac-sim:5.1.0 ./runheadless.sh</span></code></pre>
+</div>
+
+<h3 id="container-flow">End-to-end: headless Isaac Sim in a container</h3>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi container check</span>
+<span class="ok">Container stack is ready.</span>
+<span class="in">caasi container list</span>
+<span class="out">  Local Isaac images:
+    (none pulled yet)</span>
+<span class="in">docker pull nvcr.io/nvidia/isaac-sim:5.1.0</span>
+<span class="out">5.1.0: Pulling from nvidia/isaac-sim ...</span>
+<span class="in">caasi container run nvcr.io/nvidia/isaac-sim:5.1.0 ./runheadless.sh --allow-root</span>
+<span class="ok">Container run started: 20260905-151002-isaac-sim-5-1-0.</span>
+<span class="in">caasi logs latest -f</span>
+<span class="out">[0.000s] Simulation App Starting...
+[18.204s] Streaming server started on port 8211</span>
+<span class="in">caasi run status isaac-sim-5.1.0 --json | jq '{status, pid}'</span>
+<span class="out">{ "status": "running", "pid": 52310 }</span>
+<span class="in">caasi run stop 20260905-1510</span>
+<span class="out">Run 20260905-151002-isaac-sim-5-1-0 stopped.</span></span></code></pre>
+<p>Queries resolve as <code>latest</code>, the exact run name (<code>isaac-sim-5.1.0</code>, the
+image tail with <code>:</code> → <code>-</code>), or a unique <em>id</em> prefix — note that ids
+start with the timestamp, so a bare <code>isaac-sim</code> matches nothing. See
+<a href="runs.html#model">QUERY semantics</a>.</p>
+
+<h2 id="compare">Local, remote, container</h2>
+<table>
+  <thead><tr><th></th><th>local (<code>sim run</code>, <code>train</code>)</th><th><code>remote run</code></th><th><code>container run</code></th></tr></thead>
+  <tbody>
+    <tr><td>Transport</td><td>direct process launch</td><td>system <code>ssh</code></td><td><code>docker</code> / <code>podman</code></td></tr>
+    <tr><td><code>backend</code> / <code>kind</code></td><td><code>sim</code>|<code>lab</code>|<code>python</code> / <code>experiment</code>|<code>train</code></td><td><code>ssh</code> / <code>remote</code></td><td><code>container</code> / <code>container</code></td></tr>
+    <tr><td>Config needed</td><td>tool registry (<a href="configuration.html#tools">tools</a>)</td><td><code>remotes:</code> entry</td><td>a runtime + a pulled image</td></tr>
+    <tr><td>Readiness gate</td><td><code>caasi doctor</code> · <code>sim check</code></td><td><code>remote connect NAME -c 'nvidia-smi'</code></td><td><code>container check</code></td></tr>
+    <tr><td>Logs land in</td><td colspan="3" style="text-align:center">the same place — <code>&lt;run dir&gt;/stdout.log</code>, followed with <code>caasi logs &lt;query&gt; -f</code></td></tr>
+  </tbody>
+</table>
+<p>That uniformity is the point: whether the work happens on this machine, across SSH or inside a
+container, you inspect it with the same <code>caasi run</code> and <code>caasi logs</code>
+commands.</p>
+
+<div class="page-nav">
+  <a class="prev" href="native.html"><span class="pn-label">Previous</span><span class="pn-title">← Native &amp; Shell</span></a>
+  <a class="next" href="index.html"><span class="pn-label">Next</span><span class="pn-title">Overview →</span></a>
+</div>
+
+<footer class="doc-footer">
+  Caasi CLI 0.1.0 — these pages live in <code>docs/</code> and need no build step.
+  Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
+</footer>
+</main>
+</div>
+<script src="assets/copy.js"></script>
+<script src="assets/sidebar.js"></script>
+</body>
+</html>

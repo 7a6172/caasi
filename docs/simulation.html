@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simulation — Caasi CLI Documentation</title>
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/theme.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html">Caa<span>si</span></a>
+  <span class="badge">v0.1.0</span>
+  <span class="tagline">Simulation: sim · lab · experiment YAML</span>
+  <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
+</header>
+<div class="layout">
+<aside id="sidebar"></aside>
+<main>
+
+<h1>Simulation</h1>
+<p class="lead">
+Describe an experiment once in a small YAML file, then run it headless on Isaac Sim, Isaac Lab or
+plain Python — as a <a href="runs.html">tracked run</a>. Caasi resolves the right interpreter,
+wires the environment, detaches the process and hands you back a run id.
+</p>
+
+<h2 id="experiment">The experiment YAML</h2>
+<p>The single input format shared by <code>sim run</code>, <code>train</code>,
+<code>benchmark start</code> and <code>dataset generate</code>. By convention these live in the
+project's <code>experiments/</code> directory.</p>
+<pre><code># experiments/wave.yaml
+name: wave                  # optional; default = file stem ("wave")
+backend: sim                # sim | lab | python  (default: sim)
+script: scripts/wave.py     # REQUIRED; relative paths resolve against this YAML's directory
+headless: true              # default: true
+args: ["--steps", "10000"]  # optional; passed to the script
+env:                        # optional; extra environment variables
+  MY_ASSET_ROOT: /data/assets
+python: null                # optional; explicit interpreter, overrides backend defaults
+cwd: null                   # optional; working directory (default: the YAML's directory)</code></pre>
+<table>
+  <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td><code>script</code></td><td>path</td><td>—</td><td><strong>Required.</strong> Missing → <code>Error: 'script' is required in &lt;path&gt;</code>.</td></tr>
+    <tr><td><code>backend</code></td><td><code>sim</code> | <code>lab</code> | <code>python</code></td><td><code>sim</code></td><td>Anything else → error listing the valid backends.</td></tr>
+    <tr><td><code>name</code></td><td>str</td><td>file stem</td><td>Used for the run name / run id.</td></tr>
+    <tr><td><code>headless</code></td><td>bool</td><td><code>true</code></td><td>Recorded in the run manifest; <code>train</code>/<code>benchmark</code> append <code>--headless</code> to the script args when true.</td></tr>
+    <tr><td><code>args</code></td><td>list</td><td><code>[]</code></td><td>Must be a YAML list.</td></tr>
+    <tr><td><code>env</code></td><td>mapping</td><td><code>{}</code></td><td>Merged into the process environment (yours wins over Caasi's defaults).</td></tr>
+    <tr><td><code>python</code></td><td>str</td><td>auto</td><td>Explicit interpreter; skips backend launcher resolution.</td></tr>
+    <tr><td><code>cwd</code></td><td>path</td><td>YAML's directory</td><td>Working directory of the process.</td></tr>
+  </tbody>
+</table>
+
+<h3>How the launch command is built</h3>
+<table>
+  <thead><tr><th>Backend</th><th>Command</th><th>Requires</th></tr></thead>
+  <tbody>
+    <tr><td><code>python</code></td><td><code>&lt;experiment.python or the CLI's python&gt; script args…</code></td><td>nothing</td></tr>
+    <tr><td><code>sim</code></td><td><code>&lt;registered python&gt;</code> or <code>&lt;ISAACSIM_PATH&gt;/python.sh script args…</code></td><td>registered <code>tools.isaacsim</code> (or env/`python:` fallback)</td></tr>
+    <tr><td><code>lab</code></td><td><code>&lt;registered python&gt;</code>, else <code>&lt;ISAACLAB_PATH&gt;/isaaclab.sh -p script args…</code>, else <code>python3</code></td><td>registered <code>tools.isaaclab</code> for the launcher path</td></tr>
+  </tbody>
+</table>
+<p>Caasi also sets <code>CAASI_EXPERIMENT=&lt;abs config path&gt;</code> and, for sim/lab backends,
+<code>ISAACSIM_PATH</code>/<code>ISAACLAB_PATH</code> in the child environment — unless your
+<code>env:</code> block already defines them.</p>
+<div class="callout note">
+  <div class="c-title">Without a registered install</div>
+  <p>If the backend needs a tool Caasi cannot resolve you get a clear error instead of a broken
+  launch: <code>Error: Backend 'sim' needs a registered isaacsim install. Register one with
+  'caasi config set tools.isaacsim...' or use backend 'python'.</code> (exit 1)</p>
+</div>
+
+<h2 id="sim-run">caasi sim run</h2>
+<pre class="syn"><code>caasi sim run CONFIG_PATH [--name NAME] [--dry-run] [-- SCRIPT_ARGS…]</code></pre>
+<table>
+  <thead><tr><th>Parameter</th><th>Kind</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>CONFIG_PATH</code></td><td>argument</td><td>path</td><td>required</td><td>The experiment YAML.</td></tr>
+    <tr><td><code>--name</code></td><td>option</td><td>str</td><td>experiment name</td><td>Override the run name (and thus the run id).</td></tr>
+    <tr><td><code>--dry-run</code></td><td>option</td><td>flag</td><td>off</td><td>Print command, cwd and env without starting anything.</td></tr>
+    <tr><td>trailing args</td><td>pass-through</td><td></td><td></td><td>Anything Caasi doesn't recognize is appended verbatim to the script's argv (after the YAML's <code>args</code>).</td></tr>
+  </tbody>
+</table>
+
+<h3>Example — dry run first</h3>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi sim run experiments/wave.yaml --dry-run</span>
+<span class="out">Dry run — nothing was started:
+  command: /opt/isaac-sim-6.0/python.sh /home/you/demo/scripts/wave.py --steps 10000
+  cwd: /home/you/demo/experiments
+  env: ISAACSIM_PATH=/opt/isaac-sim-6.0
+  env: MY_ASSET_ROOT=/data/assets</span></span></code></pre>
+
+<h3>Example — launch and follow</h3>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi sim run experiments/wave.yaml -- --seed 7</span>
+<span class="ok">Run 20260905-142301-wave started in the background.</span>
+<span class="dim">  Follow it with: caasi logs 20260905-142301-wave -f</span>
+<span class="in">caasi run status latest --json | jq '.status'</span>
+<span class="out">"running"</span></span></code></pre>
+<p>The run is created with <code>backend: sim</code> (or whatever the YAML says),
+<code>kind: experiment</code>, and <code>extra: {experiment, headless}</code> in the manifest.</p>
+<div class="callout note">
+  <div class="c-title">JSON</div>
+  <p><code>sim run</code> has no local <code>--json</code>; use the global flag —
+  <code>caasi --json sim run exp.yaml</code> prints the full run record. And remember: the command's
+  exit code reflects the <em>launch</em>, not the simulation. Check the outcome later with
+  <code>caasi run status</code>.</p>
+</div>
+
+<h2 id="sim-control">Status, checks and lifecycle</h2>
+
+<h3 id="sim-status">caasi sim status</h3>
+<pre class="syn"><code>caasi sim status [--json]</code></pre>
+<p>Two things at a glance: is an Isaac Sim install resolvable, and which sim-backend runs are
+currently active (<code>running</code>/<code>paused</code>)?</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi sim status</span>
+<span class="ok">✓ Isaac Sim 6.0 → /opt/isaac-sim-6.0</span>
+<span class="out">     Active Simulation Runs
+  ID                     Name  Status   PID
+  20260905-142301-wave   wave  running  48213</span>
+<span class="in">caasi sim status --json | jq '.backend'</span>
+<span class="out">{ "tool": "isaacsim", "version": "6.0", "path": "/opt/isaac-sim-6.0", "python": null }</span></span></code></pre>
+<p>Always exits <code>0</code> — an unregistered backend is reported
+(<code>✗ Isaac Sim is not registered (caasi config set tools.isaacsim...)</code>) but is not an
+error. JSON: <code>{"backend": {…}, "active_runs": [run records]}</code>.</p>
+
+<h3 id="sim-check">caasi sim check</h3>
+<pre class="syn"><code>caasi sim check [--verbose]</code></pre>
+<p>Pre-flight check before a big launch: runs the doctor engine for the four sections that matter
+for simulation — <code>isaac</code>, <code>nvidia</code>, <code>hardware</code>,
+<code>storage</code> — and prints each check with hints for problems (or all, with
+<code>--verbose</code>).</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi sim check</span>
+<span class="ok">✓ Isaac Sim — 6.0 at /opt/isaac-sim-6.0
+✓ nvidia-smi — 550.107.02
+✓ GPU 0 — NVIDIA GeForce RTX 4090 (24564 MiB)
+✓ RAM — 62.7 GiB
+✓ Disk (runs) — 412.9 GiB free</span>
+<span class="in">caasi sim check &amp;&amp; caasi sim run experiments/wave.yaml</span></span></code></pre>
+<p>Exit <code>1</code> if any check fails (warnings don't fail), else <code>0</code> — made for
+<code>&amp;&amp;</code> chains.</p>
+
+<h3 id="sim-lifecycle">caasi sim stop / pause / resume</h3>
+<pre class="syn"><code>caasi sim stop   QUERY
+caasi sim pause  QUERY
+caasi sim resume QUERY</code></pre>
+<p>Simulation-flavored shortcuts for the identical <a href="runs.html#run">run lifecycle</a>
+commands (same <code>QUERY</code> semantics — <code>latest</code>, id prefix or name — same
+signals, same messages, same exit codes). Convenience, nothing more:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi sim pause latest</span>
+<span class="ok">Run 20260905-142301-wave paused.</span>
+<span class="in">caasi sim resume latest &amp;&amp; caasi sim stop latest</span>
+<span class="ok">Run 20260905-142301-wave resumed.
+Run 20260905-142301-wave stopped.</span></span></code></pre>
+
+<h2 id="lab">caasi lab</h2>
+
+<h3 id="lab-status">caasi lab status</h3>
+<pre class="syn"><code>caasi lab status [--json]</code></pre>
+<p>Isaac Lab detection plus the two integration points Caasi cares about: the
+<code>isaaclab.sh</code> launcher and whether a <code>ros2</code> CLI is on PATH for the ROS
+bridge.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi lab status</span>
+<span class="ok">✓ Isaac Lab 2.0 at /opt/IsaacLab</span>
+<span class="out">  Launcher: /opt/IsaacLab/isaaclab.sh
+  Python: /opt/IsaacLab/_isaac_sim/python.sh</span>
+<span class="in">caasi lab status --json</span>
+<span class="out">{
+  "status": "ok",
+  "detail": "Isaac Lab 2.0 at /opt/IsaacLab",
+  "version": "2.0",
+  "path": "/opt/IsaacLab",
+  "python": "/opt/IsaacLab/_isaac_sim/python.sh",
+  "launcher": "/opt/IsaacLab/isaaclab.sh",
+  "ros2_bridge": true
+}</span></span></code></pre>
+<p>Detection order: registry → <code>ISAACLAB_PATH</code> → <code>~/isaaclab</code>,
+<code>~/IsaacLab</code>, <code>~/workspace/*</code> → pip metadata. When nothing is found the
+status is <code>fail</code> with an install hint — but the exit code is still <code>0</code>
+(this is a report, not a gate; use <code>caasi setup</code> or <code>doctor</code> for gating).</p>
+
+<h3>Running Isaac Lab experiments</h3>
+<p>There is no separate “lab run” — use <code>sim run</code> with <code>backend: lab</code>:</p>
+<pre class="term"><code><span class="t-head">experiments/ant.yaml</span><span class="t-body"><span class="out">name: ant-train
+backend: lab
+script: scripts/train_ant.py
+headless: true</span></span></code></pre>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi sim run experiments/ant.yaml --dry-run</span>
+<span class="out">Dry run — nothing was started:
+  command: /opt/IsaacLab/isaaclab.sh -p /opt/IsaacLab/scripts/train_ant.py
+  cwd: /home/you/demo/experiments</span>
+<span class="warn">Note: experiment backend is 'lab', not 'sim'.</span></span></code></pre>
+<p>(The yellow note reminds you that <code>sim run</code> launched a <code>lab</code>-backend
+experiment; the run is tracked with <code>backend: lab</code> and appears in
+<code>caasi run list</code> like everything else.)</p>
+
+<div class="page-nav">
+  <a class="prev" href="projects.html"><span class="pn-label">Previous</span><span class="pn-title">← Projects</span></a>
+  <a class="next" href="training.html"><span class="pn-label">Next</span><span class="pn-title">Training →</span></a>
+</div>
+
+<footer class="doc-footer">
+  Caasi CLI 0.1.0 — these pages live in <code>docs/</code> and need no build step.
+  Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
+</footer>
+</main>
+</div>
+<script src="assets/copy.js"></script>
+<script src="assets/sidebar.js"></script>
+</body>
+</html>
