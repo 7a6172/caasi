@@ -24,3 +24,8 @@ datasets/
 .idea/
 .vscode/
 .DS_Store
+
+# NOTE: uv.lock is deliberately NOT ignored. It is tracked so that dev and CI
+# environments are byte-for-byte reproducible. It does not affect what users
+# install (pip resolves from pyproject.toml) and is excluded from the published
+# sdist via [tool.hatch.build.targets.sdist] in pyproject.toml.

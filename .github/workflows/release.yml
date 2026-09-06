@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Run tests
+        run: uv run --frozen --extra dev pytest -q
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # required for PyPI trusted publishing (OIDC)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Check tag matches package version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VERSION=$(grep -oP '__version__ = "\K[^"]+' src/caasi/__init__.py)
+          PYPROJECT=$(grep -oP '^version = "\K[^"]+' pyproject.toml)
+          echo "tag=$TAG __init__=$VERSION pyproject=$PYPROJECT"
+          if [ "$TAG" != "$VERSION" ] || [ "$TAG" != "$PYPROJECT" ]; then
+            echo "::error::Version mismatch — tag v$TAG, __init__.py $VERSION, pyproject.toml $PYPROJECT"
+            exit 1
+          fi
+
+      - name: Build
+        run: uv build
+
+      - name: Verify install from built wheel
+        run: |
+          uv venv /tmp/smoke
+          uv pip install --python /tmp/smoke/bin/python dist/*.whl
+          /tmp/smoke/bin/caasi --version
+
+      - name: Publish to PyPI
+        run: uv publish dist/*

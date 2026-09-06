@@ -26,12 +26,18 @@ Requires Python 3.10+ on Linux. The Isaac stack, ROS 2 and PyTorch are *discover
 installed, by Caasi.
 
 ```bash
+pip install caasi
+```
+
+Or from source:
+
+```bash
 git clone https://github.com/a6y3ap/caasi.git
 cd caasi
 pip install -e .              # add pytest as well: pip install -e ".[dev]"
 ```
 
-This installs the `caasi` command. Shell completion is available:
+Either way this installs the `caasi` command. Shell completion is available:
 
 ```bash
 caasi --install-completion

@@ -42,6 +42,10 @@ Issues = "https://github.com/a6y3ap/caasi/issues"
 [project.scripts]
 caasi = "caasi.cli.main:run"
 
+[tool.hatch.build.targets.sdist]
+# CI config and the dev lockfile are tracked in git but must not ship to PyPI.
+exclude = [".github", "uv.lock"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/caasi"]
 
