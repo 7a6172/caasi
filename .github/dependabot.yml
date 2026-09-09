@@ -1,0 +1,8 @@
+version: 2
+updates:
+  # Keeps the pinned actions current. For the SHA-pinned setup-uv it opens a PR
+  # with the new commit SHA and rewrites the `# vX.Y.Z` comment alongside it.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
