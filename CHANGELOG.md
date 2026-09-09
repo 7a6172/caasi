@@ -1,21 +1,5 @@
 # Changelog
 
-## [Unreleased]
-
-### Added
-- `--layout rich|plain` — bordered tables or space-aligned columns, also settable via
-  `CAASI_LAYOUT` or `layout:` in `config.yaml`; resolved flag > env > config like `--lang`
-- `CAASI_HELP_ORDER` / `help_order:` in `config.yaml` — `grouped` (default), `core`
-  (entry points first, then a–z) or `alpha` (flat a–z) ordering for the root command
-  listing; resolved env > config, with no flag because `--help` exits before flags are read
-
-### Changed
-- Table layout defaults to `rich` (bordered) again — the space-aligned columns introduced
-  in 0.2.0 are now opt-in via `--layout plain`
-- Root help lists commands in titled groups (Start here, Environment, Projects & runs,
-  Simulation & training, Data & teleop, ROS 2, GPU-accelerated, Native/models & remote),
-  alphabetical within each group; subcommand listings keep their existing order
-
 ## [0.2.0]
 
 ### Added
@@ -43,10 +27,14 @@
 - Global `--color auto|always|never`, honoring `NO_COLOR`
 - Docs: pages for GPU-accelerated robotics, synthetic data/teleop, physics & foundation
   models; capability-catalog configuration guide
-
-### Changed
-- Terminal output uses space-aligned columns instead of bordered tables and panels;
-  colors and status symbols (`✓ ! ✗ • ↳`) are kept
+- `--layout rich|plain` — bordered tables or space-aligned columns, also settable via
+  `CAASI_LAYOUT` or `layout:` in `config.yaml`; resolved flag > env > config like `--lang`
+- `CAASI_HELP_ORDER` / `help_order:` in `config.yaml` — `grouped` (default), `core`
+  (entry points first, then a–z) or `alpha` (flat a–z) ordering for the root command
+  listing; resolved env > config, with no flag because `--help` exits before flags are read
+- Root help lists commands in titled groups (Start here, Environment, Projects & runs,
+  Simulation & training, Data & teleop, ROS 2, GPU-accelerated, Native/models & remote),
+  alphabetical within each group; subcommand listings keep their existing order
 
 ### Fixed
 - `run_ros2` sources the distro `setup.bash` when the shell has not — ROS groups now work
