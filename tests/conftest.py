@@ -8,6 +8,9 @@ import textwrap
 
 import pytest
 import yaml
+
+os.environ["_TYPER_FORCE_DISABLE_TERMINAL"] = "1"
+
 from typer.testing import CliRunner
 
 from caasi.core import catalog, rosenv
