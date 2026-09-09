@@ -1,4 +1,4 @@
-"""Tests for `isaac doctor`."""
+"""Tests for `caasi doctor`."""
 
 from __future__ import annotations
 
@@ -61,3 +61,45 @@ def test_section_keys_cover_registry():
     """Every registered section must have a stable key for --component."""
     assert "nvidia" in SECTION_KEYS
     assert len(SECTION_KEYS) == len(set(SECTION_KEYS))
+
+
+def test_section_keys_include_the_ecosystem_sections():
+    for key in ("accelerated", "physics", "assets", "data", "platform"):
+        assert key in SECTION_KEYS
+    assert len(SECTION_KEYS) == 18
+
+
+def test_doctor_ros_reports_a_sourced_environment(runner, fake_ros_sourced):
+    result = runner.invoke(app, ["doctor", "--component", "ros", "--json"])
+    assert result.exit_code == 0, result.output
+    statuses = {c["name"]: c["status"] for c in json.loads(result.output)["checks"]}
+    assert statuses["Environment sourced"] == "ok"
+
+
+def test_doctor_ros_warns_when_the_environment_is_unsourced(
+    runner, fake_ros_sourced, monkeypatch
+):
+    monkeypatch.delenv("AMENT_PREFIX_PATH", raising=False)
+    result = runner.invoke(app, ["doctor", "--component", "ros", "--json"])
+    checks = {c["name"]: c for c in json.loads(result.output)["checks"]}
+    assert checks["Environment sourced"]["status"] == "warn"
+    assert "source " in checks["Environment sourced"]["hint"]
+
+
+def test_doctor_robotics_probes_slam_toolbox(
+    runner, fake_ros_sourced, tmp_path, monkeypatch
+):
+    from .conftest import write_lines
+
+    write_lines(tmp_path / "pkgs.txt", ["nav2_bringup", "slam_toolbox"])
+    monkeypatch.setenv("CAASI_FAKE_ROS_PACKAGES", str(tmp_path / "pkgs.txt"))
+
+    result = runner.invoke(app, ["doctor", "--component", "robotics", "--json"])
+    assert result.exit_code == 1
+    statuses = {c["name"]: c["status"] for c in json.loads(result.output)["checks"]}
+    assert statuses == {
+        "Nav2": "ok",
+        "MoveIt 2": "fail",
+        "ros2_control": "fail",
+        "SLAM Toolbox": "ok",
+    }

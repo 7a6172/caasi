@@ -26,22 +26,28 @@ Requires Python 3.10+ on Linux. The Isaac stack, ROS 2 and PyTorch are *discover
 installed, by Caasi.
 
 ```bash
-pip install caasi
+pipx install caasi    # recommended: isolated env, `caasi` linked into ~/.local/bin (on PATH)
+pip install caasi     # or into the active environment
 ```
 
-Or from source:
+Both install the `caasi` console script into the environment's `bin/`; pipx additionally
+makes it available system-wide for your user (`pipx ensurepath` if `~/.local/bin` is not
+on PATH). On PEP 668 distros (Ubuntu 23.04+, Debian 12+, Fedora) a bare system-wide
+`pip install` is refused — use pipx or a dedicated venv:
 
 ```bash
-git clone https://github.com/a6y3ap/caasi.git
-cd caasi
+python3 -m venv ~/.venvs/caasi && ~/.venvs/caasi/bin/pip install caasi
+```
+
+From source:
+
+```bash
+git clone https://github.com/a6y3ap/caasi.git && cd caasi
 pip install -e .              # add pytest as well: pip install -e ".[dev]"
 ```
 
-Either way this installs the `caasi` command. Shell completion is available:
-
-```bash
-caasi --install-completion
-```
+Upgrade: `pipx upgrade caasi` / `pip install -U caasi`. Shell completion:
+`caasi --install-completion`.
 
 ## Quickstart
 
@@ -55,7 +61,9 @@ caasi config show               # effective configuration
 caasi config set tools.isaacsim.default "6.0"
 ```
 
-Every command supports `--help`. Data commands support `--json` for scripting:
+Every command supports `--help` (`caasi help gpu status` works too). The root listing is
+grouped by topic; `CAASI_HELP_ORDER=alpha` flattens it to a–z. Data commands
+support `--json` for scripting:
 
 ```bash
 caasi gpu status --json | jq '.gpus[0]["memory.used"]'
@@ -76,17 +84,20 @@ caasi run status latest
 
 | Group               | Commands                                                                                            | Reference                                                                        |
 | ------------------- | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Environment         | `doctor`, `gpu status\|info\|memory\|test`, `system status\|memory\|processes`, `info`, `version`   | [environment.html](https://a6y3ap.github.io/caasi/environment.html)       |
-| Configuration       | `config show\|get\|set\|path\|tools`                                                                | [configuration.html](https://a6y3ap.github.io/caasi/configuration.html)   |
-| Projects            | `init`, `setup`, `project info\|validate`, `robot`, `scene`, `task`                                 | [projects.html](https://a6y3ap.github.io/caasi/projects.html)             |
-| Runs & logs         | `run list\|status\|logs\|stop\|pause\|resume\|delete\|inspect`, `logs`                              | [runs.html](https://a6y3ap.github.io/caasi/runs.html)                     |
-| Simulation          | `sim run\|status\|check\|stop\|pause\|resume`, `lab status`                                         | [simulation.html](https://a6y3ap.github.io/caasi/simulation.html)         |
+| Environment         | `doctor`, `gpu status\|info\|memory\|doctor\|monitor\|test`, `system status\|doctor\|memory\|processes`, `info`, `version`   | [environment.html](https://a6y3ap.github.io/caasi/environment.html)       |
+| Configuration       | `config show\|get\|set\|path\|tools\|catalog`                                                       | [configuration.html](https://a6y3ap.github.io/caasi/configuration.html)   |
+| Projects            | `init`, `setup`, `project info\|validate`, `robot list\|create\|inspect\|info\|import\|validate`, `scene list\|create\|inspect\|import\|validate\|capture\|reconstruct`, `task` | [projects.html](https://a6y3ap.github.io/caasi/projects.html)             |
+| Runs & logs         | `run list\|status\|logs\|attach\|stop\|pause\|resume\|delete\|inspect`, `logs`                      | [runs.html](https://a6y3ap.github.io/caasi/runs.html)                     |
+| Simulation          | `sim run\|headless\|status\|check\|logs\|extensions\|stop\|pause\|resume`, `lab status\|run\|train\|play\|evaluate` | [simulation.html](https://a6y3ap.github.io/caasi/simulation.html)         |
 | Training            | `train`, `benchmark start\|report`                                                                  | [training.html](https://a6y3ap.github.io/caasi/training.html)             |
-| Data & sensors      | `dataset generate\|inspect\|convert\|validate`, `sensor list\|inspect\|test`, `vision status\|inspect\|test` | [data.html](https://a6y3ap.github.io/caasi/data.html)             |
-| Review              | `replay`, `view rviz\|foxglove\|open3d\|attach`                                                     | [review.html](https://a6y3ap.github.io/caasi/review.html)                 |
-| ROS ecosystem       | `ros status\|doctor\|list\|launch\|topic\|node\|graph`, `nav status\|launch\|inspect\|test`, `moveit status\|launch\|plan\|test`, `control status\|list\|check` | [ros.html](https://a6y3ap.github.io/caasi/ros.html) |
+| Data & sensors      | `dataset list\|generate\|inspect\|convert\|validate\|download`, `sensor list\|inspect\|test`, `vision status\|inspect\|test` | [data.html](https://a6y3ap.github.io/caasi/data.html)             |
+| Review              | `replay`, `view rviz\|foxglove\|open3d\|attach\|run`                                                | [review.html](https://a6y3ap.github.io/caasi/review.html)                 |
+| ROS ecosystem       | `ros status\|doctor\|list\|launch\|topic\|node\|graph\|service`, `nav status\|launch\|inspect\|test\|doctor`, `moveit status\|launch\|plan\|test\|doctor`, `control status\|list\|check\|doctor` | [ros.html](https://a6y3ap.github.io/caasi/ros.html) |
+| GPU-accelerated robotics | `isaac-ros status\|list\|doctor\|launch`, `perception status\|camera\|pose\|detect\|segment\|inspect`, `slam status\|launch\|test\|benchmark`, `mapping status\|run\|inspect`, `motion status\|serve\|plan\|execute\|benchmark`, `nitros status\|doctor`, `pipeline inspect` | [accelerated.html](https://a6y3ap.github.io/caasi/accelerated.html) |
+| Synthetic data & teleop | `synth status\|generate\|preview\|validate`, `teleop start\|record\|stop\|replay`                | [synthetic.html](https://a6y3ap.github.io/caasi/synthetic.html)           |
+| Physics & foundation models | `physics status\|list\|run\|benchmark`, `warp status\|test\|benchmark`, `groot status\|setup\|run\|train\|evaluate`, `cosmos status\|run\|dataset` | [platform.html](https://a6y3ap.github.io/caasi/platform.html)     |
 | Native & shell      | `native run\|sim\|lab\|ros`, `shell`                                                                | [native.html](https://a6y3ap.github.io/caasi/native.html)                 |
-| Remote & containers | `remote list\|connect\|run`, `container list\|check\|run`                                           | [remote.html](https://a6y3ap.github.io/caasi/remote.html)                 |
+| Remote & containers | `remote list\|connect\|run`, `container list\|status\|check\|doctor\|run`                           | [remote.html](https://a6y3ap.github.io/caasi/remote.html)                 |
 
 More examples:
 
@@ -95,6 +106,11 @@ caasi train experiments/ant.yaml --steps 500000 --envs 4096
 caasi ros status && caasi nav launch --map maps/warehouse.yaml
 caasi container run nvcr.io/nvidia/isaac-sim:5.1.0 ./runheadless.sh
 caasi remote run gpu-box python train.py --steps 1000
+caasi perception status && caasi slam launch --backend toolbox
+caasi synth generate experiments/sdg.yaml --episodes 100
+caasi teleop record -t /cmd_vel --name demo
+caasi physics run experiments/wave.yaml --engine newton
+caasi groot train configs/finetune.yaml --epochs 3
 ```
 
 ## Configuration
@@ -118,9 +134,18 @@ remotes:
     port: 2222
     identity: ~/.ssh/id_ed25519
     path: ~/experiments
+physics:
+  default: newton            # engine used when `--engine` is omitted
+catalog:
+  slam:
+    toolbox:
+      packages: [slam_toolbox]   # re-point a capability when upstream renames it
 ```
 
-Manage it with `caasi config show|get|set|path|tools`.
+Manage it with `caasi config show|get|set|path|tools|catalog`. The `catalog:` section is
+how Caasi knows what to look for: each capability lists the packages, binaries, Python
+modules, env vars and paths to probe, in that order. Nothing is imported — a new upstream
+version is a config change, not a code change.
 
 ## Examples
 
@@ -140,7 +165,18 @@ pytest
 ## Documentation
 
 Read it at <https://a6y3ap.github.io/caasi/> or open
-[`docs/index.html`](docs/index.html) directly in a browser.
+[`docs/index.html`](docs/index.html) directly in a browser — the pages are plain HTML in
+[`docs/`](docs/) and need no build step.
+
+The reference is split by concern: [environment](docs/environment.html) and
+[configuration](docs/configuration.html) for the machine and the capability catalog;
+[runs](docs/runs.html), [projects](docs/projects.html), [simulation](docs/simulation.html),
+[training](docs/training.html), [data](docs/data.html) and [review](docs/review.html) for the
+daily workflow; [ros](docs/ros.html) for ROS 2, Nav2, MoveIt 2 and ros2\_control;
+[accelerated](docs/accelerated.html) for Isaac ROS, perception, SLAM, mapping, motion and
+NITROS; [synthetic](docs/synthetic.html) for Replicator synthetic data and teleoperation;
+[platform](docs/platform.html) for physics engines, Warp, GR00T and Cosmos; and
+[native](docs/native.html) plus [remote](docs/remote.html) for the escape hatches.
 
 ## License
 

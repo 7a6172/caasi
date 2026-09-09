@@ -198,6 +198,67 @@ def ros_node(
     output.echo(result.stdout.rstrip(), markup=False)
 
 
+service_app = typer.Typer(no_args_is_help=True)
+app.add_typer(service_app, name="service", help=_("ros.service.help"))
+
+
+@service_app.command("list", help=_("ros.service.list_help"))
+def service_list(
+    json_output: bool = typer.Option(False, "--json", help=_("flag.json")),
+) -> None:
+    _binary_or_fail()
+    lines = ros_core.ros2_lines(["service", "list"])
+    if output.wants_json(json_output):
+        output.echo_json(lines)
+        return
+    if not lines:
+        output.echo(f"[yellow]{_('ros.empty', kind='services')}[/yellow]")
+        return
+    output.echo(f"[bold]{_('ros.list_title', kind='services')}[/bold]")
+    for line in lines:
+        output.echo(f"  {line}", markup=False)
+
+
+@service_app.command("info", help=_("ros.service.info_help"))
+def service_info(
+    name: str = typer.Argument(..., help=_("ros.arg.service")),
+    json_output: bool = typer.Option(False, "--json", help=_("flag.json")),
+) -> None:
+    _binary_or_fail()
+    result = ros_core.run_ros2(["service", "info", name])
+    if not result.ok:
+        output.fail(_("ros.no_service", name=name))
+        return
+    if output.wants_json(json_output):
+        output.echo_json({"service": name, "info": result.stdout.strip()})
+        return
+    output.echo(result.stdout.rstrip(), markup=False)
+
+
+@service_app.command("call", help=_("ros.service.call_help"), context_settings=_EXTRA_SETTINGS)
+def service_call(
+    ctx: typer.Context,
+    name: str = typer.Argument(..., help=_("ros.arg.service")),
+    service_type: str = typer.Argument(..., help=_("ros.arg.service_type")),
+    json_output: bool = typer.Option(False, "--json", help=_("flag.json")),
+) -> None:
+    _binary_or_fail()
+    result = ros_core.run_ros2(
+        ["service", "call", name, service_type, *[str(a) for a in ctx.args]]
+    )
+    if output.wants_json(json_output):
+        output.echo_json(
+            {
+                "service": name,
+                "type": service_type,
+                "returncode": result.returncode,
+                "stdout": result.stdout.strip(),
+            }
+        )
+        raise typer.Exit(result.returncode if result.returncode >= 0 else 1)
+    raise typer.Exit(_print_result(result))
+
+
 @app.command("graph", help=_("ros.graph_help"))
 def ros_graph(
     json_output: bool = typer.Option(False, "--json", help=_("flag.json")),

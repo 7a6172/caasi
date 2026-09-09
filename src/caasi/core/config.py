@@ -6,7 +6,7 @@ Precedence (lowest to highest):
     < project config  ./caasi.yaml
     < CAASI_CONFIG env file
     < --config flag file
-    < individual env vars (CAASI_LANG)
+    < individual env vars (CAASI_LANG, CAASI_LAYOUT, CAASI_HELP_ORDER)
 
 The tool registry lets users register custom install paths and multiple
 versions of each tool (Isaac Sim, Isaac Lab, ROS 2, ...) with a selectable
@@ -38,6 +38,8 @@ ENV_LANG = "CAASI_LANG"
 
 DEFAULTS: dict[str, Any] = {
     "language": "en",
+    "layout": "rich",
+    "help_order": "grouped",
     "defaults": {"output": "table"},
     "paths": {
         "runs": "~/.caasi/runs",
@@ -180,6 +182,18 @@ class Config:
     def language(self) -> str:
         value = self.data.get("language")
         return str(value) if value else "en"
+
+    @property
+    def layout(self) -> str | None:
+        """Configured table layout, or None to let the caller apply its default."""
+        value = self.data.get("layout")
+        return str(value) if value else None
+
+    @property
+    def help_order(self) -> str | None:
+        """Configured root help order, or None to let the caller apply its default."""
+        value = self.data.get("help_order")
+        return str(value) if value else None
 
     def get(self, dotted: str, default: Any = None) -> Any:
         value = get_dotted(self.data, dotted)

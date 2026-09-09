@@ -10,7 +10,7 @@
 <body>
 <header class="topbar">
   <a class="brand" href="index.html">Caa<span>si</span></a>
-  <span class="badge">v0.1.0</span>
+  <span class="badge">v0.2.0</span>
   <span class="tagline">Review: replay · view</span>
   <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
 </header>
@@ -95,9 +95,20 @@ unknown/unavailable viewer, or no 3D file for Open3D. <code>pid</code> is absent
 dry-run mode.</p>
 
 <h2 id="view">caasi view</h2>
-<p>Direct viewer launchers. All four subcommands support <code>--dry-run</code> (print the
-command instead of launching); none supports <code>--json</code> — except where noted. Launched
-viewers are detached; the reported PID is the viewer's.</p>
+<p>Direct viewer launchers. All five subcommands support <code>--dry-run</code> (print the
+command instead of launching); <code>view run</code> is the only one that also supports
+<code>--json</code>. Launched viewers are detached; the reported PID is the viewer's.</p>
+<table>
+  <thead><tr><th>Subcommand</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>rviz</code></td><td>Open RViz 2 for a run.</td></tr>
+    <tr><td><code>foxglove</code></td><td>Open Foxglove Studio for a run.</td></tr>
+    <tr><td><code>open3d</code></td><td>Open an Open3D viewer for recorded data.</td></tr>
+    <tr><td><code>attach</code></td><td>Attach a viewer to a running simulation.</td></tr>
+    <tr><td><code>run</code></td><td>Open a run's recorded artifacts in the best available viewer.</td></tr>
+  </tbody>
+</table>
+<p>Descriptions are the CLI's own — <code>caasi view --help</code> prints this list.</p>
 
 <h3 id="view-rviz">caasi view rviz</h3>
 <pre class="syn"><code>caasi view rviz [CONFIG_FILE] [--dry-run]</code></pre>
@@ -139,6 +150,34 @@ outputs (streams, recordings being written) are reachable.</p>
 <span class="out">wave (20260905-181233-wave)
   Status     running</span></span></code></pre>
 
+<h3 id="view-run">caasi view run</h3>
+<pre class="syn"><code>caasi view run QUERY [--viewer NAME] [--dry-run] [--json]</code></pre>
+<p>Opens a run's recorded artifacts in the best available viewer — <code>replay</code> without the
+replay knobs. The artifacts are picked the same way (everything in the run directory except the
+five bookkeeping files), viewer resolution is the same
+<code>rviz → foxglove → open3d</code>, and the viewer only receives <code>CAASI_RUN_DIR</code>:
+there are no <code>--speed</code>/<code>--episode</code> options here, so no
+<code>CAASI_REPLAY_*</code> variables are exported. Unlike <code>view attach</code>, the run does
+not have to be active.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi view run latest --dry-run</span>
+<span class="out">wave (20260905-142301-wave)
+  Recorded data: recordings/traj.txt, scan.pcd
+Dry run — nothing was launched:
+  command: rviz2</span>
+<span class="in">caasi view run wave</span>
+<span class="ok">Viewer 'rviz' launched (pid 53604).</span>
+<span class="in">caasi view run latest --viewer open3d --json --dry-run</span>
+<span class="out">{
+  "id": "20260905-142301-wave",
+  "viewer": "open3d",
+  "command": ["/home/you/caasi/.venv/bin/python", "-c", "…", "/home/you/.caasi/runs/20260905-142301-wave/scan.pcd"],
+  "artifacts": ["recordings/traj.txt", "scan.pcd"]
+}</span></span></code></pre>
+<p>Exit codes mirror <code>replay</code>: <code>0</code> launched or dry-run, <code>1</code> for an
+unknown run, <code>Error: Run &lt;id&gt; has no recorded data to replay.</code>, an unknown or
+unavailable viewer, or — with <code>--viewer open3d</code> — no 3D file among the artifacts.
+<code>pid</code> is absent from the JSON in dry-run mode.</p>
+
 <div class="callout tip">
   <div class="c-title">Headless-first in practice</div>
   <p>Run on the server without a display (<code>sim run</code> is headless by default), then
@@ -153,7 +192,7 @@ outputs (streams, recordings being written) are reachable.</p>
 </div>
 
 <footer class="doc-footer">
-  Caasi CLI 0.1.0 — these pages live in <code>docs/</code> and need no build step.
+  Caasi CLI 0.2.0 — these pages live in <code>docs/</code> and need no build step.
   Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
 </footer>
 </main>

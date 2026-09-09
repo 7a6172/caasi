@@ -82,6 +82,40 @@
       ]
     },
     {
+      title: "GPU-Accelerated Robotics",
+      items: [
+        { href: "accelerated.html", label: "Isaac ROS & functional groups" },
+        { href: "accelerated.html#isaac-ros", label: "isaac-ros", sub: true },
+        { href: "accelerated.html#perception", label: "perception", sub: true },
+        { href: "accelerated.html#slam", label: "slam", sub: true },
+        { href: "accelerated.html#mapping", label: "mapping", sub: true },
+        { href: "accelerated.html#motion", label: "motion", sub: true },
+        { href: "accelerated.html#nitros", label: "nitros", sub: true },
+        { href: "accelerated.html#pipeline", label: "pipeline", sub: true }
+      ]
+    },
+    {
+      title: "Synthetic Data & Teleop",
+      items: [
+        { href: "synthetic.html", label: "synth & teleop" },
+        { href: "synthetic.html#synth", label: "synth", sub: true },
+        { href: "synthetic.html#teleop", label: "teleop", sub: true },
+        { href: "synthetic.html#workflow", label: "record → train → evaluate", sub: true },
+        { href: "synthetic.html#dataset-download", label: "dataset download", sub: true }
+      ]
+    },
+    {
+      title: "Physics & Foundation Models",
+      items: [
+        { href: "platform.html", label: "physics · warp · groot · cosmos" },
+        { href: "platform.html#physics", label: "physics", sub: true },
+        { href: "platform.html#warp", label: "warp", sub: true },
+        { href: "platform.html#groot", label: "groot", sub: true },
+        { href: "platform.html#cosmos", label: "cosmos", sub: true },
+        { href: "platform.html#scene-reconstruct", label: "scene reconstruct", sub: true }
+      ]
+    },
+    {
       title: "Advanced",
       items: [
         { href: "native.html", label: "native & shell" },

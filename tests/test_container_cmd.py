@@ -187,3 +187,85 @@ def test_container_run_without_tool(runner, monkeypatch):
     result = runner.invoke(app, ["container", "run", "img:1"])
     assert result.exit_code == 1
     assert "No container tool found" in result.output
+
+
+def test_container_status(runner, fake_docker):
+    result = runner.invoke(app, ["container", "status", "--json"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["tool"] == str(fake_docker)
+    assert data["daemon"] is True
+    assert data["nvidia_runtime"] is True
+    assert data["ready"] is True
+    assert data["known"] == ["nvcr.io/nvidia/isaac-sim", "nvcr.io/nvidia/isaac-lab"]
+    assert data["local"] == [
+        "nvcr.io/nvidia/isaac-sim:5.1.0",
+        "nvcr.io/nvidia/isaac-lab:2.2.0",
+    ]
+
+    result = runner.invoke(app, ["container", "status"])
+    assert result.exit_code == 0
+    assert "NVIDIA runtime available" in result.output
+    assert "nvcr.io/nvidia/isaac-sim:5.1.0" in result.output
+
+
+def test_container_status_without_daemon(runner, tmp_path, monkeypatch):
+    _make_fake_docker(tmp_path, monkeypatch, nvidia_runtime="nvidia", info_rc=1)
+    result = runner.invoke(app, ["container", "status", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["daemon"] is False and data["ready"] is False
+    assert data["nvidia_runtime"] is False and data["local"] == []
+
+    result = runner.invoke(app, ["container", "status"])
+    assert "daemon is not responding" in result.output
+
+
+def test_container_status_without_tool(runner, monkeypatch):
+    monkeypatch.setattr(containers_core, "find_container_tool", lambda: None)
+    result = runner.invoke(app, ["container", "status", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["tool"] is None and data["ready"] is False
+
+    result = runner.invoke(app, ["container", "status"])
+    assert result.exit_code == 0
+    assert "No container tool found" in result.output
+
+
+def test_container_doctor(runner, fake_docker, fake_nvidia_smi):
+    result = runner.invoke(app, ["container", "doctor", "--json"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["group"] == "container"
+    assert data["sections"] == ["containers", "nvidia"]
+    rows = {check["name"]: check for check in data["checks"]}
+    assert "NVIDIA driver" in rows
+    assert rows["GPU in containers"]["status"] == "ok"
+    assert rows["GPU in containers"]["hint"] == (
+        "Expose the GPU with: caasi container run --gpus all <image>"
+    )
+
+
+def test_container_doctor_without_nvidia_runtime(runner, tmp_path, monkeypatch, fake_nvidia_smi):
+    _make_fake_docker(tmp_path, monkeypatch, nvidia_runtime="", info_rc=0)
+    result = runner.invoke(app, ["container", "doctor", "--json"])
+    assert result.exit_code == 0, result.output
+    rows = {check["name"]: check for check in json.loads(result.output)["checks"]}
+    assert rows["GPU in containers"]["status"] == "warn"
+    assert "nvidia-container-toolkit" in rows["GPU in containers"]["detail"]
+    assert "nvidia-container-toolkit" in rows["GPU in containers"]["hint"]
+
+
+def test_container_doctor_without_tool(runner, monkeypatch, fake_nvidia_smi):
+    monkeypatch.setattr(containers_core, "find_container_tool", lambda: None)
+    result = runner.invoke(app, ["container", "doctor", "--json"])
+    assert result.exit_code == 0, result.output
+    rows = {check["name"]: check for check in json.loads(result.output)["checks"]}
+    assert rows["GPU in containers"]["status"] == "skip"
+    assert rows["GPU in containers"]["detail"] == (
+        "No container tool found; install Docker or Podman first."
+    )
+
+    result = runner.invoke(app, ["container", "doctor"])
+    assert "GPU in containers" in result.output

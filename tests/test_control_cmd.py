@@ -10,7 +10,7 @@ import yaml
 from caasi.cli.main import app
 from caasi.core import ros as ros_core
 from caasi.utils import shell
-from .test_ros_cmd import fake_ros  # noqa: F401
+from .test_ros_cmd import fake_ros, no_ros2  # noqa: F401
 
 GOOD_PARAMS = textwrap.dedent(
     """\
@@ -131,3 +131,55 @@ def test_control_check_requires_file(runner, fake_ros, tmp_path):  # noqa: F811
     result = runner.invoke(app, ["control", "check", str(tmp_path / "nope.yaml")])
     assert result.exit_code == 1
     assert "No params file found" in result.output
+
+
+def test_control_doctor(runner, fake_ros):  # noqa: F811
+    result = runner.invoke(app, ["control", "doctor", "--json"])
+    # moveit_core / slam_toolbox are absent in the fake world.
+    assert result.exit_code == 1, result.output
+    data = json.loads(result.output)
+    assert data["group"] == "control"
+    assert data["sections"] == ["ros", "robotics"]
+    assert data["exit_code"] == 1
+    rows = {check["name"]: check for check in data["checks"]}
+    assert rows["ros2controlcli"]["status"] == "ok"
+    assert rows["controller_manager"] == {
+        "section": "robotics",
+        "name": "controller_manager",
+        "status": "ok",
+        "detail": "/controller_manager",
+        "hint": "",
+    }
+
+    result = runner.invoke(app, ["control", "doctor"])
+    assert result.exit_code == 1
+    assert "/controller_manager" in result.output
+
+
+def test_control_doctor_warns_without_a_manager(runner, fake_ros, monkeypatch):  # noqa: F811
+    monkeypatch.setattr(ros_core, "ros2_lines", lambda args, timeout=None: [])
+    result = runner.invoke(app, ["control", "doctor", "--json"])
+    rows = {check["name"]: check for check in json.loads(result.output)["checks"]}
+    assert rows["controller_manager"]["status"] == "warn"
+    assert rows["controller_manager"]["detail"] == "No controller_manager node is running."
+    assert rows["controller_manager"]["hint"].startswith("Start the hardware interface")
+
+
+def test_control_doctor_reports_a_missing_cli(runner, fake_ros, monkeypatch):  # noqa: F811
+    monkeypatch.setattr(ros_core, "pkg_prefix", lambda name: None)
+    result = runner.invoke(app, ["control", "doctor", "--json"])
+    assert result.exit_code == 1
+    rows = {check["name"]: check for check in json.loads(result.output)["checks"]}
+    assert rows["ros2controlcli"]["status"] == "fail"
+    assert "ros2controlcli" in rows["ros2controlcli"]["detail"]
+    assert rows["ros2controlcli"]["hint"] == "Install ros-$ROS_DISTRO-ros2controlcli."
+
+
+def test_control_doctor_without_ros2(runner, tmp_path, monkeypatch):
+    no_ros2(monkeypatch, tmp_path)
+    result = runner.invoke(app, ["control", "doctor", "--json"])
+    assert result.exit_code == 1
+    rows = {check["name"]: check for check in json.loads(result.output)["checks"]}
+    assert rows["Robotics stacks"]["status"] == "skip"
+    assert rows["controller_manager"]["status"] == "skip"
+    assert rows["controller_manager"]["detail"] == "skipped (ROS 2 CLI unavailable)"

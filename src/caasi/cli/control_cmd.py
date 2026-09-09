@@ -8,11 +8,16 @@ from typing import Optional
 import typer
 import yaml
 
+from .. import state
+from ..checks import CheckResult, run_checks
 from ..core import ros as ros_core
 from ..i18n import _
 from ..utils import output
+from . import ecosystem as eco
 
 app = typer.Typer(no_args_is_help=True)
+
+DOCTOR_SECTIONS = ["ros", "robotics"]
 
 CONTROL_PACKAGE = "ros2controlcli"
 
@@ -130,3 +135,57 @@ def control_check(
     if not ok:
         raise typer.Exit(1)
     output.echo(f"[green]{_('control.check_ok', count=len(controllers))}[/green]")
+
+
+def _skip(name: str) -> CheckResult:
+    return CheckResult(
+        "robotics", name, "skip", _("doctor.robotics.no_ros2"), _("doctor.robotics.no_ros2_hint")
+    )
+
+
+def _doctor_extras() -> list[CheckResult]:
+    if not ros_core.find_ros2_binary():
+        return [_skip(CONTROL_PACKAGE), _skip(_("control.doctor.manager"))]
+
+    results: list[CheckResult] = []
+    prefix = _control_prefix()
+    if prefix is not None:
+        results.append(CheckResult("robotics", CONTROL_PACKAGE, "ok", str(prefix)))
+    else:
+        results.append(
+            CheckResult(
+                "robotics",
+                CONTROL_PACKAGE,
+                "fail",
+                _("control.not_installed"),
+                _("control.doctor.package_hint"),
+            )
+        )
+    nodes = _manager_nodes()
+    if nodes:
+        results.append(
+            CheckResult("robotics", _("control.doctor.manager"), "ok", ", ".join(nodes))
+        )
+    else:
+        results.append(
+            CheckResult(
+                "robotics",
+                _("control.doctor.manager"),
+                "warn",
+                _("control.no_managers"),
+                _("control.doctor.manager_hint"),
+            )
+        )
+    return results
+
+
+@app.command("doctor", help=_("control.doctor_help"))
+def control_doctor(
+    verbose: bool = typer.Option(False, "--verbose", help=_("doctor.flag.verbose")),
+    json_output: bool = typer.Option(False, "--json", help=_("flag.json")),
+) -> None:
+    results = run_checks(DOCTOR_SECTIONS, state.cfg())
+    results.extend(_doctor_extras())
+    eco.render_checks(
+        {"group": "control", "sections": DOCTOR_SECTIONS}, results, verbose, json_output
+    )

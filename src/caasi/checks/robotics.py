@@ -11,6 +11,7 @@ STACKS = [
     ("nav2", "nav2_bringup", "doctor.robotics.nav2"),
     ("moveit2", "moveit_core", "doctor.robotics.moveit"),
     ("ros2_control", "controller_manager", "doctor.robotics.control"),
+    ("slam", "slam_toolbox", "doctor.robotics.slam"),
 ]
 
 PKG_TIMEOUT = 8.0

@@ -1,14 +1,16 @@
-"""`caasi config` — show, get, set, path, tools."""
+"""`caasi config` — show, get, set, path, tools, catalog."""
 
 from __future__ import annotations
 
 import os
+from typing import Optional
 
 import typer
 import yaml
 from rich.table import Table
 
 from .. import state
+from ..core import catalog
 from ..core.config import ENV_CONFIG, global_config_path, project_config_path
 from ..i18n import _
 from ..utils import output
@@ -108,7 +110,7 @@ def config_tools(json_output: bool = typer.Option(False, "--json", help=_("flag.
         output.echo_json(payload)
         return
 
-    table = Table(title=_("config.tools.title"), header_style="bold")
+    table = Table(header_style="bold", **output.table_styles())
     for column in (_("config.tools.col.tool"), _("config.tools.col.default"), _("config.tools.col.versions"), _("config.tools.col.path")):
         table.add_column(column)
     for name, info in payload.items():
@@ -120,6 +122,63 @@ def config_tools(json_output: bool = typer.Option(False, "--json", help=_("flag.
         path = info["resolved"]["path"] if info["resolved"] else _("config.tools.unresolved")
         table.add_row(name, str(default) if default is not None else "—", versions, str(path))
     output.echo(table)
+
+
+@app.command("catalog")
+def config_catalog(
+    domain_key: Optional[str] = typer.Argument(None, help=_("config.catalog.domain_help")),
+    json_output: bool = typer.Option(False, "--json", help=_("flag.json")),
+) -> None:
+    """Print the effective capability catalog (built-ins + your overrides)."""
+    cfg = state.cfg()
+
+    if domain_key is not None and catalog.domain(domain_key, cfg) is None:
+        known = ", ".join(d.key for d in catalog.domains(cfg))
+        output.fail(_("config.catalog.unknown", domain=domain_key, known=known))
+        return
+
+    selected = (
+        [catalog.domain(domain_key, cfg)]
+        if domain_key
+        else list(catalog.domains(cfg))
+    )
+    overrides = catalog.overrides_from(cfg)
+
+    if output.wants_json(json_output):
+        payload = {}
+        for spec in selected:
+            if spec is None:
+                continue
+            entry = spec.to_dict()
+            entry["default"] = catalog.domain_setting(spec.key, "default", cfg)
+            entry["overrides"] = overrides.get(spec.key, {})
+            payload[spec.key] = entry
+        output.echo_json(payload if domain_key is None else payload.get(domain_key, {}))
+        return
+
+    for spec in selected:
+        if spec is None:
+            continue
+        default = catalog.domain_setting(spec.key, "default", cfg)
+        heading = _(spec.title)
+        if default:
+            heading += f" [dim]({_('config.catalog.default', value=default)})[/dim]"
+        output.echo(f"[bold]{heading}[/bold] [dim]{spec.key} · {spec.kind}[/dim]")
+
+        table = Table(header_style="bold", **output.table_styles())
+        table.add_column(_("config.catalog.col.capability"))
+        table.add_column(_("config.catalog.col.targets"))
+        table.add_column(_("config.catalog.col.launch"))
+        table.add_column(_("config.catalog.col.group"))
+        for cap in spec.capabilities:
+            launch = f"{cap.launch[0]} {cap.launch[1]}" if cap.launch else "—"
+            table.add_row(
+                cap.key, catalog.targets(cap), launch, cap.group or "—"
+            )
+        output.echo(table)
+        output.echo()
+
+    output.echo(f"[dim]{_('config.catalog.hint')}[/dim]")
 
 
 if __name__ == "__main__":  # pragma: no cover

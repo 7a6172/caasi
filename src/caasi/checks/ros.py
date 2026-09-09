@@ -1,10 +1,11 @@
-"""ROS 2 checks: distro, setup file, ros2 CLI, middleware."""
+"""ROS 2 checks: distro, setup file, ros2 CLI, sourced environment, middleware."""
 
 from __future__ import annotations
 
 import os
 
 from ..core import ros as ros_core
+from ..core import rosenv
 from ..i18n import _
 from . import CheckResult, register
 
@@ -50,6 +51,27 @@ def check_ros(ctx) -> list[CheckResult]:
         results.append(
             CheckResult(
                 "ros", _("doctor.ros.cli"), "warn", _("doctor.ros.cli_missing"), _("doctor.ros.hint")
+            )
+        )
+
+    if rosenv.is_sourced():
+        results.append(
+            CheckResult("ros", _("doctor.ros.sourced"), "ok", _("doctor.ros.sourced_ok"))
+        )
+    elif rosenv.setup_file() is not None:
+        results.append(
+            CheckResult(
+                "ros",
+                _("doctor.ros.sourced"),
+                "warn",
+                _("doctor.ros.sourced_missing"),
+                _("doctor.ros.sourced_hint", command=rosenv.source_hint()),
+            )
+        )
+    else:
+        results.append(
+            CheckResult(
+                "ros", _("doctor.ros.sourced"), "skip", _("doctor.ros.sourced_unknown")
             )
         )
 

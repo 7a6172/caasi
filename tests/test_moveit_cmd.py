@@ -8,7 +8,7 @@ import yaml
 
 from caasi.cli.main import app
 from caasi.core import ros as ros_core
-from .test_ros_cmd import configure_runs, fake_ros, wait_for_run  # noqa: F401
+from .test_ros_cmd import configure_runs, fake_ros, no_ros2, wait_for_run  # noqa: F401
 
 
 def test_moveit_status(runner, fake_ros):  # noqa: F811
@@ -108,3 +108,48 @@ def test_moveit_test_fail(runner, fake_ros, monkeypatch):  # noqa: F811
     result = runner.invoke(app, ["moveit", "test"])
     assert result.exit_code == 1
     assert "not ready" in result.output
+
+
+def test_moveit_doctor(runner, fake_ros):  # noqa: F811
+    result = runner.invoke(app, ["moveit", "doctor", "--json"])
+    # nav2_bringup / controller_manager / slam_toolbox are absent in the fake world.
+    assert result.exit_code == 1, result.output
+    data = json.loads(result.output)
+    assert data["group"] == "moveit"
+    assert data["sections"] == ["ros", "robotics"]
+    assert data["exit_code"] == 1
+    rows = {check["name"]: check for check in data["checks"]}
+    assert rows["moveit_ros_move_group"]["status"] == "ok"
+    assert rows["move_group"]["status"] == "ok"
+    assert rows["move_group"]["detail"] == "/move_group"
+    assert rows["Motion planners"]["status"] == "warn"
+    assert rows["Motion planners"]["detail"] == "No motion capability is installed."
+    assert rows["Motion planners"]["hint"] == (
+        "See which planners are installed with 'caasi motion status'."
+    )
+
+    result = runner.invoke(app, ["moveit", "doctor"])
+    assert result.exit_code == 1
+    assert "Motion planners" in result.output
+
+
+def test_moveit_doctor_lists_catalog_planners(runner, fake_ros_world):
+    fake_ros_world.packages(
+        "moveit_core", "moveit_planners_ompl", "moveit_ros_move_group"
+    ).nodes("/move_group")
+    result = runner.invoke(app, ["moveit", "doctor", "--json"])
+    assert result.exit_code == 1, result.output
+    rows = {check["name"]: check for check in json.loads(result.output)["checks"]}
+    assert rows["Motion planners"]["status"] == "ok"
+    assert rows["Motion planners"]["detail"] == "moveit, ompl"
+    assert rows["moveit_ros_move_group"]["status"] == "ok"
+
+
+def test_moveit_doctor_without_ros2(runner, tmp_path, monkeypatch):
+    no_ros2(monkeypatch, tmp_path)
+    result = runner.invoke(app, ["moveit", "doctor", "--json"])
+    assert result.exit_code == 1
+    rows = {check["name"]: check for check in json.loads(result.output)["checks"]}
+    assert rows["Robotics stacks"]["status"] == "skip"
+    assert rows["move_group"]["status"] == "skip"
+    assert rows["moveit_ros_move_group"]["status"] == "skip"

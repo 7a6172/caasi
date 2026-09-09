@@ -9,11 +9,16 @@ from pathlib import Path
 import typer
 from rich.table import Table
 
+from .. import state
+from ..checks import run_checks
 from ..core import nvidia
 from ..i18n import _
 from ..utils import output, shell, sysinfo
+from . import ecosystem as eco
 
 app = typer.Typer(no_args_is_help=True)
+
+DOCTOR_SECTIONS = ["system", "hardware", "storage"]
 
 
 def _os_summary() -> dict:
@@ -49,7 +54,7 @@ def system_status(json_output: bool = typer.Option(False, "--json", help=_("flag
         output.echo_json(data)
         return
 
-    table = Table(title=_("system.status_title"), header_style="bold", show_header=False)
+    table = Table(header_style="bold", show_header=False, **output.table_styles())
     table.add_column(style="bold")
     table.add_column()
     load = ", ".join(f"{x:.2f}" for x in data["load"]) if data["load"] else "n/a"
@@ -67,6 +72,17 @@ def system_status(json_output: bool = typer.Option(False, "--json", help=_("flag
     ):
         table.add_row(label, str(value))
     output.echo(table)
+
+
+@app.command("doctor")
+def system_doctor(
+    verbose: bool = typer.Option(False, "--verbose", help=_("doctor.flag.verbose")),
+    json_output: bool = typer.Option(False, "--json", help=_("flag.json")),
+) -> None:
+    results = run_checks(DOCTOR_SECTIONS, state.cfg())
+    eco.render_checks(
+        {"group": "system", "sections": DOCTOR_SECTIONS}, results, verbose, json_output
+    )
 
 
 @app.command("memory")
@@ -92,7 +108,7 @@ def system_memory(json_output: bool = typer.Option(False, "--json", help=_("flag
         output.echo_json(data)
         return
 
-    table = Table(title=_("system.memory_title"), header_style="bold", show_header=False)
+    table = Table(header_style="bold", show_header=False, **output.table_styles())
     table.add_column(style="bold")
     table.add_column(justify="right")
     for label, key in (
@@ -136,7 +152,7 @@ def system_processes(
         )
         return
 
-    table = Table(title=_("system.processes_title"), header_style="bold")
+    table = Table(header_style="bold", **output.table_styles())
     for column in ("PID", _("system.col.user"), _("system.col.mem"), _("system.col.rss"), _("system.col.command")):
         table.add_column(column)
     for row in rows:

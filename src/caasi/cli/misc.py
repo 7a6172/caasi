@@ -1,9 +1,10 @@
-"""`caasi version` and `caasi info`."""
+"""`caasi version`, `caasi info` and `caasi help`."""
 
 from __future__ import annotations
 
 import platform
 import sys
+from typing import Any, Optional
 
 import typer
 
@@ -22,6 +23,33 @@ def version_command(
         output.echo_json({"name": "caasi", "version": __version__})
         return
     output.echo(f"caasi {__version__}")
+
+
+def help_command(
+    ctx: typer.Context,
+    command: Optional[list[str]] = typer.Argument(None, help=_("help.arg.command")),
+) -> None:
+    """Print the help of `caasi`, or of a command path given as arguments.
+
+    ``caasi help`` matches ``caasi --help``; ``caasi help gpu status`` walks the
+    command tree the same way git does, resolving each name against its group.
+    """
+    target_ctx = ctx.find_root()
+    target: Any = target_ctx.command
+    path: list[str] = []
+    for name in command or []:
+        resolve = getattr(target, "get_command", None)
+        if resolve is None:
+            output.fail(_("help.no_subcommands", command=" ".join(path)))
+        subcommand = resolve(target_ctx, name)
+        if subcommand is None:
+            output.fail(_("help.unknown_command", command=name))
+        target_ctx = typer.Context(subcommand, info_name=name, parent=target_ctx)
+        target = subcommand
+        path.append(name)
+    text = target.get_help(target_ctx)
+    if text:  # the rich help renderer prints directly and returns nothing
+        typer.echo(text)
 
 
 def _ecosystem() -> dict[str, str | None]:

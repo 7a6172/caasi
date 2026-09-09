@@ -10,7 +10,7 @@
 <body>
 <header class="topbar">
   <a class="brand" href="index.html">Caa<span>si</span></a>
-  <span class="badge">v0.1.0</span>
+  <span class="badge">v0.2.0</span>
   <span class="tagline">Advanced: remote · container</span>
   <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
 </header>
@@ -200,6 +200,16 @@ epoch 2/50  loss 1.98  fps 830
 <code>podman</code>. If neither exists, <code>list</code> says so in yellow, <code>check</code>
 fails, and <code>run</code> exits <code>1</code> with
 <code>Error: No container tool found; install Docker or Podman first.</code></p>
+<table>
+  <thead><tr><th>Subcommand</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>list</code></td><td>List known and locally available Isaac container images.</td></tr>
+    <tr><td><code>status</code></td><td>Container runtime status (tool, daemon, NVIDIA runtime, images).</td></tr>
+    <tr><td><code>check</code></td><td>Check container readiness (tool, daemon, GPU runtime).</td></tr>
+    <tr><td><code>doctor</code></td><td>Check container readiness (runtimes, GPU, guidance).</td></tr>
+    <tr><td><code>run</code></td><td>Run a command inside a container image as a tracked run.</td></tr>
+  </tbody>
+</table>
 
 <h3 id="container-list">caasi container list</h3>
 <pre class="syn"><code>caasi container list [--json]</code></pre>
@@ -225,6 +235,46 @@ name contains <code>isaac</code>, <code>isaacsim</code> or <code>isaaclab</code>
 <code>&lt;none&gt;</code> tags are dropped). Nothing pulled yet →
 <code>(none pulled yet)</code>; no runtime → <code>"tool": null</code> and
 <code>"local": []</code> in JSON.</p>
+
+<h3 id="container-status">caasi container status</h3>
+<pre class="syn"><code>caasi container status [--json]</code></pre>
+<p><code>list</code> answers “which images?”; <code>status</code> answers “can I run anything at
+all?”. Five rows, from the same probes <code>check</code> uses (<code>&lt;tool&gt; info</code>,
+20 s timeout):</p>
+<table>
+  <thead><tr><th>Row</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td><code>Runtime</code></td><td>the tool's basename (<code>docker</code> / <code>podman</code>), or <code>(none)</code></td></tr>
+    <tr><td><code>Daemon</code></td><td><code>daemon is responding</code> / <code>daemon is not responding</code></td></tr>
+    <tr><td><code>NVIDIA runtime</code></td><td><code>NVIDIA runtime available</code> / <code>NVIDIA runtime missing (install nvidia-container-toolkit)</code></td></tr>
+    <tr><td><code>Known images</code></td><td>how many well-known Isaac images Caasi knows — <code>2</code></td></tr>
+    <tr><td><code>Local images</code></td><td>the local Isaac images, comma-separated, or <code>(none pulled yet)</code></td></tr>
+  </tbody>
+</table>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi container status</span>
+<span class="out">Containers
+  Runtime          docker
+  Daemon           daemon is responding
+  NVIDIA runtime   NVIDIA runtime available
+  Known images     2
+  Local images     (none pulled yet)</span>
+<span class="in">caasi container status --json | jq '{tool, daemon, nvidia_runtime, ready}'</span>
+<span class="out">{
+  "tool": "/usr/bin/docker",
+  "daemon": true,
+  "nvidia_runtime": true,
+  "ready": true
+}</span></span></code></pre>
+<p>The full payload is <code>{"tool", "daemon", "nvidia_runtime", "known", "local", "ready"}</code>
+— <code>tool</code> is the resolved absolute path or <code>null</code>, <code>known</code> the image
+references, <code>local</code> what is already pulled. <code>ready</code> is <code>true</code> when a
+tool exists <em>and</em> its daemon answers; the NVIDIA runtime is deliberately not part of it. When
+no tool resolves, the daemon and image probes are skipped (not run), <code>Runtime</code> prints
+<code>(none)</code> and the yellow <code>No container tool found; install Docker or Podman
+first.</code> hint is appended.</p>
+<p>Always exits <code>0</code> — <code>status</code> is a report, not a gate. For a gate use
+<a href="#container-check"><code>check</code></a>; for the reasons behind it,
+<a href="#container-doctor"><code>doctor</code></a>.</p>
 
 <h3 id="container-check">caasi container check</h3>
 <pre class="syn"><code>caasi container check [--json]</code></pre>
@@ -252,7 +302,74 @@ Container stack is ready.</span>
 <span class="err">exit code: 1</span></span></code></pre>
 <p>The <code>nvidia-runtime</code> check is skipped (reported <code>false</code>) when the daemon is
 down. Exit <code>0</code> only when all three pass, in both human and JSON mode — so it composes:</p>
-<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi container check &amp;&amp; caasi container run nvcr.io/nvidia/isaac-sim:5.1.0 ./runheadless.sh</span></code></pre>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi container check &amp;&amp; caasi container run nvcr.io/nvidia/isaac-sim:5.1.0 ./runheadless.sh</span></span></code></pre>
+
+<h3 id="container-doctor">caasi container doctor</h3>
+<pre class="syn"><code>caasi container doctor [--verbose] [--json]</code></pre>
+<p>The diagnostic view of the same stack: two check sections — <code>containers</code> and
+<code>nvidia</code> — plus one container-specific extra, <em>GPU in containers</em>. It uses the
+shared doctor renderer, so the symbols (<code>✓</code> <code>!</code> <code>✗</code>
+<code>•</code>) and the hint rules are the ones you know from <code>caasi doctor</code>: hints print
+for failures and warnings, and <code>--verbose</code> adds them for passing checks too.</p>
+<ul>
+  <li><strong>containers</strong> — a <em>Docker</em> and a <em>Podman</em> row, each probed with
+      <code>&lt;tool&gt; --version</code> (5 s): <code>ok</code> with the version line,
+      <code>skip</code> when the binary is absent, <code>warn</code> when the probe fails. When both
+      are missing, a third <em>Container runtime</em> row warns
+      <code>no container runtime found</code> with the hint
+      <code>Needed only for 'caasi container' workflows.</code></li>
+  <li><strong>nvidia</strong> — the driver, one row per GPU and CUDA, all read from
+      <code>nvidia-smi</code>; a single <code>fail</code> row when <code>nvidia-smi</code> is
+      missing or errors.</li>
+  <li><strong>GPU in containers</strong> — the daemon's NVIDIA runtime, reported as guidance rather
+      than a gate: <code>ok</code> (<code>NVIDIA runtime available</code>, hint
+      <code>Expose the GPU with: caasi container run --gpus all &lt;image&gt;</code>),
+      <code>warn</code> (<code>NVIDIA runtime missing (install nvidia-container-toolkit)</code>), or
+      <code>skip</code> when there is no tool or no responding daemon.</li>
+</ul>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi container doctor</span>
+<span class="ok">✓ Docker — Docker version 29.8.0, build 88096ef</span>
+<span class="dim">• Podman — not installed</span>
+<span class="ok">✓ NVIDIA driver — driver 580.173.02
+✓ GPU — NVIDIA GeForce RTX 3080, 10.0 GiB VRAM
+✓ CUDA — CUDA 13.0 (driver-reported)
+✓ GPU in containers — NVIDIA runtime available</span>
+<span class="dim">exit code: 0</span>
+<span class="in">caasi container doctor --json | jq '.sections, .checks[-1], .exit_code'</span>
+<span class="out">[
+  "containers",
+  "nvidia"
+]
+{
+  "section": "containers",
+  "name": "GPU in containers",
+  "status": "ok",
+  "detail": "NVIDIA runtime available",
+  "hint": "Expose the GPU with: caasi container run --gpus all &lt;image&gt;"
+}
+0</span></span></code></pre>
+<p>Exit code: <code>1</code> when any row is a <code>fail</code>, <code>0</code> otherwise — in both
+human and JSON mode (<code>exit_code</code> is in the payload). Warnings and skips never fail it,
+which is exactly how <code>doctor</code> differs from <code>check</code>:</p>
+<pre class="term"><code><span class="t-head">shell — daemon without nvidia-container-toolkit</span><span class="t-body"><span class="in">caasi container doctor</span>
+<span class="ok">✓ Docker — Docker version 29.8.0, build 88096ef</span>
+<span class="dim">• Podman — not installed</span>
+<span class="ok">✓ NVIDIA driver — driver 580.173.02
+✓ GPU — NVIDIA GeForce RTX 3080, 10.0 GiB VRAM
+✓ CUDA — CUDA 13.0 (driver-reported)</span>
+<span class="warn">! GPU in containers — NVIDIA runtime missing (install nvidia-container-toolkit)
+    ↳ Install nvidia-container-toolkit and restart the container daemon.</span>
+<span class="dim">exit code: 0   # a warning does not fail the gate — 'container check' exits 1 here</span></span></code></pre>
+<table>
+  <thead><tr><th></th><th><code>container check</code></th><th><code>container doctor</code></th></tr></thead>
+  <tbody>
+    <tr><td>Scope</td><td>three boolean gates: <code>tool</code>, <code>daemon</code>, <code>nvidia-runtime</code></td><td>the <code>containers</code> + <code>nvidia</code> sections and the <em>GPU in containers</em> extra</td></tr>
+    <tr><td>Missing NVIDIA runtime</td><td><code>ok: false</code> → exit <code>1</code></td><td><code>warn</code> + install hint → exit <code>0</code></td></tr>
+    <tr><td>No container tool at all</td><td>exit <code>1</code></td><td><code>skip</code>/<code>warn</code> rows; exit <code>1</code> only if the <code>nvidia</code> section itself fails</td></tr>
+    <tr><td>JSON</td><td><code>{"ok", "checks": [{"check", "ok", "detail"}]}</code></td><td><code>{"group": "container", "sections", "checks": [{"section", "name", "status", "detail", "hint"}], "exit_code"}</code></td></tr>
+    <tr><td>Use it for</td><td>the CI gate in front of <code>container run</code></td><td>finding out <em>why</em> the gate fails, with hints</td></tr>
+  </tbody>
+</table>
 
 <h3 id="container-run">caasi container run</h3>
 <pre class="syn"><code>caasi container run IMAGE [--gpus all] [--dry-run] [--json] [CONTAINER COMMAND…]</code></pre>
@@ -302,7 +419,7 @@ ends. The run is named after the image: last path component, <code>:</code> → 
   <pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi container run nvcr.io/nvidia/isaac-sim:5.1.0 --dry-run</span>
 <span class="out">Dry run — nothing was launched:
   command: /usr/bin/docker run --rm --gpus all nvcr.io/nvidia/isaac-sim:5.1.0</span>
-<span class="in">docker run --rm --gpus all -v "$PWD":/work -p 8211:8211 nvcr.io/nvidia/isaac-sim:5.1.0 ./runheadless.sh</span></code></pre>
+<span class="in">docker run --rm --gpus all -v "$PWD":/work -p 8211:8211 nvcr.io/nvidia/isaac-sim:5.1.0 ./runheadless.sh</span></span></code></pre>
 </div>
 
 <h3 id="container-flow">End-to-end: headless Isaac Sim in a container</h3>
@@ -348,7 +465,7 @@ commands.</p>
 </div>
 
 <footer class="doc-footer">
-  Caasi CLI 0.1.0 — these pages live in <code>docs/</code> and need no build step.
+  Caasi CLI 0.2.0 — these pages live in <code>docs/</code> and need no build step.
   Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
 </footer>
 </main>

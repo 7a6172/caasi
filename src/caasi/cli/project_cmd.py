@@ -42,7 +42,7 @@ def project_info(json_output: bool = typer.Option(False, "--json", help=_("flag.
     if output.wants_json(json_output):
         output.echo_json(payload)
         return
-    table = Table(title=_("project.title"), header_style="bold", show_header=False)
+    table = Table(header_style="bold", show_header=False, **output.table_styles())
     table.add_column(style="bold")
     table.add_column()
     table.add_row(_("project.row.root"), payload["root"])

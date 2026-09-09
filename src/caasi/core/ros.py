@@ -62,11 +62,17 @@ def run_ros2(
 ) -> shell.ShellResult:
     """Run ``ros2 <args>`` capturing output.
 
+    The command is wrapped so that it works in an unsourced shell too (see
+    :mod:`caasi.core.rosenv`); in an already-sourced shell the wrapper is a
+    no-op and the plain binary is executed.
+
     Raises :class:`RosError` only when the ros2 binary is missing; failing
     ros2 calls are reported through the returned ShellResult.
     """
+    from . import rosenv
+
     binary = require_ros2()
-    return shell.run_cmd([binary, *args], timeout=timeout)
+    return shell.run_cmd(rosenv.wrap([binary, *args]), timeout=timeout)
 
 
 def ros2_lines(

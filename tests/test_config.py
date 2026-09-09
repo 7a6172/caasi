@@ -1,4 +1,4 @@
-"""Tests for `isaac config` and the configuration/tool-registry engine."""
+"""Tests for `caasi config` and the configuration/tool-registry engine."""
 
 from __future__ import annotations
 
@@ -157,3 +157,83 @@ def test_resolve_tool_units():
 
     assert cfg.resolve_tool("multi", version="missing") is None
     assert cfg.resolve_tool("unknown-tool") is None
+
+
+# -- config catalog -------------------------------------------------------
+
+
+def test_catalog_lists_every_domain(runner):
+    result = runner.invoke(app, ["config", "catalog", "--json"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert {"isaacros", "slam", "mapping", "motion", "nitros", "physics"} <= set(data)
+    assert data["slam"]["kind"] == "ros"
+    assert [c["key"] for c in data["slam"]["capabilities"]] == [
+        "visual",
+        "toolbox",
+        "cartographer",
+    ]
+
+
+def test_catalog_single_domain(runner):
+    result = runner.invoke(app, ["config", "catalog", "motion", "--json"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["key"] == "motion"
+    assert "cumotion" in [c["key"] for c in data["capabilities"]]
+
+
+def test_catalog_table_output(runner):
+    result = runner.invoke(app, ["config", "catalog", "slam"])
+    assert result.exit_code == 0, result.output
+    output = all_output(result)
+    assert "slam_toolbox" in output
+    assert "online_async_launch.py" in output
+    assert "caasi config set catalog.<domain>.<capability>.<field>" in output
+
+
+def test_catalog_unknown_domain(runner):
+    result = runner.invoke(app, ["config", "catalog", "nope"])
+    assert result.exit_code == 1
+    assert "Unknown catalog domain" in all_output(result)
+
+
+def test_catalog_shows_overrides(runner):
+    result = runner.invoke(
+        app,
+        ["config", "set", "catalog.slam.visual.packages", "[isaac_ros_visual_slam_v4]"],
+    )
+    assert result.exit_code == 0, result.output
+
+    result = runner.invoke(app, ["config", "catalog", "slam", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    visual = next(c for c in data["capabilities"] if c["key"] == "visual")
+    assert visual["packages"] == ["isaac_ros_visual_slam_v4"]
+    assert data["overrides"]["visual"]["packages"] == ["isaac_ros_visual_slam_v4"]
+
+    result = runner.invoke(app, ["config", "catalog", "slam"])
+    assert "isaac_ros_visual_slam_v4" in all_output(result)
+
+
+def test_catalog_shows_the_domain_default(runner):
+    result = runner.invoke(app, ["config", "set", "catalog.slam.default", "toolbox"])
+    assert result.exit_code == 0, result.output
+
+    result = runner.invoke(app, ["config", "catalog", "slam", "--json"])
+    assert json.loads(result.output)["default"] == "toolbox"
+
+    result = runner.invoke(app, ["config", "catalog", "slam"])
+    assert "default: toolbox" in all_output(result)
+
+
+def test_catalog_a_new_domain_from_config(runner):
+    result = runner.invoke(
+        app, ["config", "set", "catalog.lidar.driver.packages", "[velodyne]"]
+    )
+    assert result.exit_code == 0, result.output
+    result = runner.invoke(app, ["config", "catalog", "lidar", "--json"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["key"] == "lidar"
+    assert data["capabilities"][0]["packages"] == ["velodyne"]

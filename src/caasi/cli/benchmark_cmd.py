@@ -103,7 +103,7 @@ def benchmark_report(
     if not metrics:
         output.echo(f"  [dim]{_('benchmark.no_metrics')}[/dim]")
         raise typer.Exit(1 if status == runs.TERMINAL_FAIL else 0)
-    table = Table(title=_("benchmark.title"), header_style="bold")
+    table = Table(header_style="bold", **output.table_styles())
     table.add_column(_("benchmark.col.metric"))
     table.add_column(_("benchmark.col.value"), justify="right")
     for key, value in metrics.items():

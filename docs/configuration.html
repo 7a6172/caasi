@@ -10,7 +10,7 @@
 <body>
 <header class="topbar">
   <a class="brand" href="index.html">Caa<span>si</span></a>
-  <span class="badge">v0.1.0</span>
+  <span class="badge">v0.2.0</span>
   <span class="tagline">Configuration: files, precedence, tool registry, environment variables</span>
   <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
 </header>
@@ -39,7 +39,8 @@ the same merged result.
 </table>
 <p>Merging is a <strong>recursive dict merge</strong>: a project file that sets one key under
 <code>tools:</code> does not wipe the rest of the global registry. After merging, the
-<code>CAASI_LANG</code> environment variable (if set) overrides <code>language</code>.</p>
+<code>CAASI_LANG</code>, <code>CAASI_LAYOUT</code> and <code>CAASI_HELP_ORDER</code> environment
+variables (if set) override <code>language</code>, <code>layout</code> and <code>help_order</code>.</p>
 
 <div class="callout warn">
   <div class="c-title">Malformed files</div>
@@ -50,6 +51,8 @@ the same merged result.
 
 <h3>Built-in defaults</h3>
 <pre><code>language: en
+layout: rich                   # 'rich' (bordered tables) or 'plain' (aligned columns)
+help_order: grouped            # 'grouped' (titled panels), 'core' or 'alpha' (flat a–z)
 defaults:
   output: table
 paths:
@@ -114,14 +117,103 @@ when you have several side by side (very common with Isaac Sim). It lives under 
 <span class="out">Set tools.isaacsim.versions."6.0".path = /opt/isaac-sim-6.0 (saved to /home/you/.config/caasi/config.yaml)</span>
 <span class="in">caasi config set tools.isaacsim.default "6.0"</span>
 <span class="in">caasi config tools</span>
-<span class="out">  Tool       Default  Versions  Resolved path
-  isaacsim   6.0      6.0       /opt/isaac-sim-6.0</span></span></code></pre>
+<span class="out">Tool      Default  Versions  Resolved path
+isaacsim  6.0      6.0       /opt/isaac-sim-6.0</span></span></code></pre>
 
 <h3>Registry vs. environment variables</h3>
 <p>If a tool is not in the registry, Caasi falls back to detection
 (<code>ISAACSIM_PATH</code>/<code>ISAACLAB_PATH</code> env vars, common install locations, pip
 metadata — see <a href="index.html#architecture">Architecture</a>). The registry always wins when
 present, and is the only way to manage multiple versions.</p>
+
+<h2 id="catalog">Capability catalog</h2>
+<p>Caasi is a layer over tools it does not own, so no upstream package name, binary or launch file
+is hardcoded in the CLI. They are rows in a <strong>capability catalog</strong>:
+<em>domains</em> (<code>isaacros</code>, <code>slam</code>, <code>motion</code>,
+<code>physics</code>, <code>teleop</code>, <code>sdg</code>, …) hold <em>capabilities</em>
+(<code>slam.visual</code>, <code>physics.gazebo</code>, …), and every capability lists the
+<em>probes</em> that can find it on this machine. The catalog is overridable from config under the
+top-level <code>catalog:</code> key, so an upstream rename is a config edit rather than a Caasi
+release. Print the effective table with
+<a href="#config-catalog"><code>caasi config catalog</code></a>.</p>
+
+<h3>Probe order</h3>
+<p>Probing is subprocess, pip-metadata and filesystem only — the CLI never imports the ecosystem it
+detects. A capability's fields are tried in this order and the first hit wins:</p>
+<table>
+  <thead><tr><th>#</th><th>Field</th><th>Probe</th><th>Reported as</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td><code>packages</code></td><td><code>ros2 pkg prefix &lt;name&gt;</code> (skipped entirely when there is no <code>ros2</code> CLI)</td><td><code>package</code> → the install prefix</td></tr>
+    <tr><td>2</td><td><code>binaries</code></td><td><code>&lt;name&gt;</code> found on <code>PATH</code></td><td><code>binary</code> → the executable path</td></tr>
+    <tr><td>3</td><td><code>modules</code></td><td>pip metadata of the first listed distribution that exists (never imported)</td><td><code>module</code> → its version</td></tr>
+    <tr><td>4</td><td><code>env</code></td><td>the variable is set and non-empty</td><td><code>env</code> → its value</td></tr>
+    <tr><td>5</td><td><code>paths</code></td><td>glob under the capability's tool root; a pattern starting with <code>~</code> or <code>/</code> is globbed from its own parent directory instead</td><td><code>path</code> → the first match in sorted order</td></tr>
+  </tbody>
+</table>
+<p>Two fields sit outside that chain. <code>script</code> is resolved on its own — an absolute path
+is used when the file exists, a relative one is joined to the tool root — and is attached to the
+result whether or not the capability was found. <code>launch</code> is a
+<code>[package, file]</code> pair handed to <code>ros2 launch</code>. The tool root itself comes
+from the <a href="#tools">tool registry</a> first and from the tool's environment variable
+(<code>ISAACSIM_PATH</code>, <code>ISAACLAB_PATH</code>, <code>GR00T_PATH</code>) second.</p>
+
+<h3>Overriding a capability</h3>
+<p>The override path is <code>catalog.&lt;domain&gt;.&lt;capability&gt;.&lt;field&gt;</code>, and
+the rule is deliberately the only one: an override <strong>replaces</strong> that field wholesale —
+lists are not appended to. An override may also add a capability, or a whole domain, that the
+built-ins do not know about. <code>default</code> is reserved at domain level: it names the
+capability a group uses when you omit <code>--backend</code>.</p>
+<pre><code>catalog:
+  slam:
+    default: toolbox                 # used when `caasi slam launch` gets no --backend
+    visual:
+      label: "Visual SLAM (v4)"      # row label in status / doctor output
+      packages: [isaac_ros_visual_slam_v4]
+      launch: [isaac_ros_visual_slam_v4, visual_slam.launch.py]
+      topics: [/tf, /map]
+      group: slam                    # the caasi group that wraps it
+      core: true                     # absent = a doctor failure, not a skip
+  physics:
+    newton:
+      paths: [isaac-sim.newton.sh]   # relative to the domain's tool root (isaacsim)
+      modules: [newton-physics, newton]</code></pre>
+<p>Overridable fields: <code>label</code>, <code>packages</code>, <code>binaries</code>,
+<code>modules</code>, <code>env</code>, <code>paths</code>, <code>topics</code> (lists),
+<code>launch</code> (a two-element pair), <code>script</code>, <code>group</code>,
+<code>tool</code> and <code>core</code>. Unknown fields are ignored, and <code>key</code> comes
+from the mapping key. A domain that ships a tool root (<code>perception</code>,
+<code>physics</code>, <code>groot</code>, <code>usd</code>, <code>data</code>, <code>teleop</code>,
+<code>sdg</code>) forces it on every capability it contains, so <code>tool</code> only takes effect
+on domains that have none.</p>
+<div class="callout note">
+  <div class="c-title">Set it from the CLI</div>
+  <p>Every field is reachable through <code>caasi config set</code> — list values are parsed as
+  YAML: <code>caasi config set catalog.slam.visual.packages "[isaac_ros_visual_slam_v4]"</code>.
+  See <a href="accelerated.html#firewall">the version-churn firewall</a> for the full walkthrough.</p>
+</div>
+
+<h3>Physics engine keys</h3>
+<p>The <code>physics</code> domain doubles as the engine registry, and two keys outside
+<code>catalog:</code> steer it (see <a href="platform.html#physics">caasi physics</a>):</p>
+<table>
+  <thead><tr><th>Key</th><th>Default</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr><td><code>physics.default</code></td><td><code>physx</code></td><td>Engine used by <code>physics run</code> / <code>physics benchmark</code> when <code>--engine</code> is absent. It must be a capability key of the <code>physics</code> domain; anything else exits <code>1</code> with <code>Error: Unknown physics engine '&lt;key&gt;'. Known: …</code>.</td></tr>
+    <tr><td><code>physics.engines.&lt;key&gt;.launcher</code></td><td>—</td><td>Script that replaces the experiment's own launcher for that engine. A relative value is resolved against the <code>isaacsim</code> tool root, and it is only used when the resulting file exists; otherwise a launcher the catalog found through <code>paths</code> that ends in <code>.sh</code> is used.</td></tr>
+  </tbody>
+</table>
+<pre><code>physics:
+  default: gazebo
+  engines:
+    gazebo:
+      launcher: ~/bin/gz-run.sh</code></pre>
+<p>Whichever engine is applied, the run also receives
+<code>CAASI_PHYSICS_ENGINE=&lt;key&gt;</code>. <code>synth</code> and <code>teleop</code> read no
+keys of their own: <code>synth generate</code> resolves the <code>sdg</code> domain's
+<code>replicator</code> capability, <code>teleop start</code> resolves
+<code>catalog.teleop.default</code> and then <code>keyboard</code> → <code>joy</code> →
+<code>xr</code>, and both write under <code>paths.datasets</code> — see
+<a href="synthetic.html">synth &amp; teleop</a>.</p>
 
 <h2 id="remotes">Remotes</h2>
 <p>The <code>remotes:</code> section defines SSH machines for the
@@ -147,6 +239,8 @@ does the work.</p>
 emits the same object). This is the ground truth of what Caasi will do.</p>
 <pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi config show</span>
 <span class="out">language: en
+layout: rich
+help_order: grouped
 defaults:
   output: table
 paths:
@@ -205,6 +299,64 @@ entries it prints a usage hint. Always exits <code>0</code>.</p>
   "python": null
 }</span></span></code></pre>
 
+<h3 id="config-catalog">caasi config catalog</h3>
+<pre class="syn"><code>caasi config catalog [DOMAIN] [--json]</code></pre>
+<p>Prints the <strong>effective capability catalog</strong> — the built-in domains merged with your
+<code>catalog:</code> overrides — so you can see exactly which upstream names Caasi will probe.
+Omit <code>DOMAIN</code> to print every domain; an unknown one exits <code>1</code> with
+<code>Error: Unknown catalog domain: &lt;name&gt;. Known domains: …</code>. See
+<a href="#catalog">Capability catalog</a>.</p>
+<table>
+  <thead><tr><th>Argument / option</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>DOMAIN</code></td><td>str</td><td>every domain</td><td>Catalog domain to show (omit to show every domain).</td></tr>
+    <tr><td><code>--json</code></td><td>flag</td><td>off</td><td>Machine-readable output.</td></tr>
+  </tbody>
+</table>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi config catalog slam</span>
+<span class="out">SLAM slam · ros
+capability    upstream targets       launch file                                  caasi group
+visual        isaac_ros_visual_slam  isaac_ros_visual_slam visual_slam.launch.py  —
+toolbox       slam_toolbox           slam_toolbox online_async_launch.py          —
+cartographer  cartographer_ros       cartographer_ros cartographer.launch.py      —
+
+Every field is overridable: `caasi config set catalog.&lt;domain&gt;.&lt;capability&gt;.&lt;field&gt; &lt;value&gt;`</span>
+<span class="in">caasi config catalog nope</span>
+<span class="err">Error: Unknown catalog domain: nope. Known domains: isaacros, perception, slam, mapping, motion, nitros, physics, warp, groot, cosmos, usd, data, teleop, sdg</span></span></code></pre>
+<p>When the domain has a <code>default</code>, the heading carries it —
+<code>SLAM (default: toolbox) slam · ros</code>. <code>--json</code> emits one object per domain,
+or a single object when <code>DOMAIN</code> is given:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi config catalog teleop --json</span>
+<span class="out">{
+  "key": "teleop",
+  "title": "catalog.domain.teleop",
+  "kind": "ros",
+  "verbs": ["start", "record", "stop", "replay"],
+  "tool": "isaacsim",
+  "capabilities": [
+    {
+      "key": "keyboard",
+      "label": "catalog.teleop.keyboard",
+      "packages": ["teleop_twist_keyboard"],
+      "binaries": [],
+      "modules": [],
+      "env": [],
+      "paths": [],
+      "launch": ["teleop_twist_keyboard", "teleop-launch.py"],
+      "script": null,
+      "topics": [],
+      "group": null,
+      "tool": "isaacsim",
+      "core": true
+    }</span>
+<span class="dim">    … one object per capability, in catalog order …</span>
+<span class="out">  ],
+  "default": null,
+  "overrides": {}
+}</span></span></code></pre>
+<p><code>overrides</code> is the raw <code>catalog.&lt;domain&gt;</code> mapping from your config,
+so what you changed and what is built-in stays visible at a glance.</p>
+
 <h2 id="env-vars">Environment variables</h2>
 <h3>Consumed by Caasi</h3>
 <table>
@@ -212,13 +364,22 @@ entries it prints a usage hint. Always exits <code>0</code>.</p>
   <tbody>
     <tr><td><code>CAASI_CONFIG</code></td><td>Path to an extra config file (merged above global/project).</td></tr>
     <tr><td><code>CAASI_LANG</code></td><td>Overrides <code>language</code> after merging (e.g. <code>en</code>).</td></tr>
+    <tr><td><code>CAASI_LAYOUT</code></td><td>Overrides <code>layout</code> after merging: <code>rich</code> (bordered tables) or <code>plain</code> (space-aligned columns). The <code>--layout</code> flag wins over both.</td></tr>
+    <tr><td><code>CAASI_HELP_ORDER</code></td><td>Overrides <code>help_order</code> after merging: <code>grouped</code> (titled panels, default), <code>core</code> (entry points first, then a–z) or <code>alpha</code> (flat a–z). Applies to the root listing only; there is no flag, because <code>--help</code> exits before flags are stored.</td></tr>
     <tr><td><code>XDG_CONFIG_HOME</code></td><td>Relocates the global config dir (<code>$XDG_CONFIG_HOME/caasi/config.yaml</code>).</td></tr>
     <tr><td><code>ISAACSIM_PATH</code></td><td>Fallback Isaac Sim location when the registry has none.</td></tr>
     <tr><td><code>ISAACLAB_PATH</code></td><td>Fallback Isaac Lab location when the registry has none.</td></tr>
     <tr><td><code>ROS_DISTRO</code></td><td>Selects the ROS 2 distro (otherwise <code>/opt/ros</code> is scanned).</td></tr>
     <tr><td><code>RMW_IMPLEMENTATION</code></td><td>Reported by <code>caasi ros status</code> (not modified).</td></tr>
+    <tr><td><code>ISAAC_ROS_WS</code></td><td>Isaac ROS workspace root, tried before the <code>tools.isaacros</code> registry entry and the common paths — see <a href="accelerated.html#isaac-ros">isaac-ros</a>.</td></tr>
+    <tr><td><code>GR00T_PATH</code></td><td>GR00T repository root: the <code>catalog.groot.repo</code> probe and the fallback for the <code>tools.groot</code> registry entry — see <a href="platform.html#groot">groot</a>.</td></tr>
+    <tr><td><code>AMENT_PREFIX_PATH</code></td><td>With <code>COLCON_PREFIX_PATH</code> and <code>PYTHONPATH</code>, proves the ROS 2 environment is already sourced. When none of them names the distro root, Caasi wraps <code>ros2</code> commands in a shell that sources <code>setup.bash</code> first.</td></tr>
+    <tr><td><code>ROS_DOMAIN_ID</code></td><td>Reported by <code>caasi doctor -c accelerated</code> (not modified).</td></tr>
+    <tr><td><code>ROS_DISABLE_NITROS</code></td><td>Probed as the <code>nitros.disable</code> capability and reported by <code>caasi doctor -c accelerated</code> (not modified).</td></tr>
   </tbody>
 </table>
+<p>Any capability can also be found through its own <code>env</code> field — see
+<a href="#catalog">Capability catalog</a>.</p>
 
 <h3>Produced for child processes</h3>
 <p>Caasi sets these in the environment of everything it launches — your scripts can rely on them:</p>
@@ -230,6 +391,7 @@ entries it prints a usage hint. Always exits <code>0</code>.</p>
     <tr><td><code>CAASI_DATASET_DIR</code></td><td><code>dataset generate</code></td><td>Dataset directory the script should write into (also passed as <code>--dataset-dir</code>).</td></tr>
     <tr><td><code>CAASI_RUN_DIR</code></td><td><code>replay</code>, <code>view attach</code></td><td>Run directory for the viewer.</td></tr>
     <tr><td><code>CAASI_REPLAY_SPEED</code>, <code>CAASI_REPLAY_EPISODE</code></td><td><code>replay</code></td><td>Replay parameters exported to the viewer.</td></tr>
+    <tr><td><code>CAASI_PHYSICS_ENGINE</code></td><td><code>physics run</code>, <code>physics benchmark</code></td><td>Key of the engine that was applied (<code>physx</code>, <code>gazebo</code>, …) — see <a href="#catalog">Capability catalog</a>.</td></tr>
   </tbody>
 </table>
 
@@ -246,7 +408,7 @@ entries it prints a usage hint. Always exits <code>0</code>.</p>
 </div>
 
 <footer class="doc-footer">
-  Caasi CLI 0.1.0 — these pages live in <code>docs/</code> and need no build step.
+  Caasi CLI 0.2.0 — these pages live in <code>docs/</code> and need no build step.
   Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
 </footer>
 </main>

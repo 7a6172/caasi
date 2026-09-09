@@ -10,7 +10,7 @@
 <body>
 <header class="topbar">
   <a class="brand" href="index.html">Caa<span>si</span></a>
-  <span class="badge">v0.1.0</span>
+  <span class="badge">v0.2.0</span>
   <span class="tagline">Training: train · benchmark start · benchmark report</span>
   <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
 </header>
@@ -77,6 +77,11 @@ apart in <code>caasi run list --json</code>.</p>
 <p>Benchmarks answer “how fast is my physics actually stepping?” — no viewport, no rendering,
 just throughput. <code>benchmark start</code> launches the run; <code>benchmark report</code>
 later parses the metrics back out of its log.</p>
+<p>Two neighbouring launchers live on another page: <code>caasi physics benchmark</code> runs the
+same kind of experiment against one specific physics engine
+(<a href="platform.html#physics-benchmark">physics</a>), and <code>caasi groot train</code>
+fine-tunes GR00T models through the repo's own scripts
+(<a href="platform.html#groot-train">groot</a>).</p>
 
 <h3 id="benchmark-start">caasi benchmark start</h3>
 <pre class="syn"><code>caasi benchmark start CONFIG_PATH [--envs N] [--steps N] [--dry-run] [-- SCRIPT_ARGS…]</code></pre>
@@ -121,11 +126,10 @@ print("Simulation FPS: 241.5")</code></pre>
 <h4>Report</h4>
 <pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi benchmark report latest</span>
 <span class="out">fps (20260905-160112-fps) — succeeded
-      Benchmark Metrics
-  Metric              Value
-  simulation_fps      241.5
-  steps_per_sec       61696
-  real_time_factor    12.3</span>
+Metric            Value
+simulation_fps    241.5
+steps_per_sec     61696
+real_time_factor   12.3</span>
 <span class="in">caasi benchmark report latest --json</span>
 <span class="out">{
   "id": "20260905-160112-fps",
@@ -164,9 +168,9 @@ headless: true</span></span></code></pre>
 <span class="ok">Run 20260905-162011-fps-bench started in the background.</span>
 <span class="in">caasi benchmark report latest</span>
 <span class="out">fps-bench (20260905-162011-fps-bench) — succeeded
-  Metric              Value
-  simulation_fps      612.4
-  steps_per_sec       156774</span></span></code></pre>
+Metric           Value
+simulation_fps   612.4
+steps_per_sec   156774</span></span></code></pre>
 <p>The run name always comes from the experiment's <code>name:</code> field —
 <code>benchmark start</code> has no <code>--name</code> flag — so that name is a stable query, and
 <code>latest</code> always means the newest run.</p>
@@ -177,7 +181,7 @@ headless: true</span></span></code></pre>
 </div>
 
 <footer class="doc-footer">
-  Caasi CLI 0.1.0 — these pages live in <code>docs/</code> and need no build step.
+  Caasi CLI 0.2.0 — these pages live in <code>docs/</code> and need no build step.
   Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
 </footer>
 </main>

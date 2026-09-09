@@ -119,3 +119,129 @@ def test_sim_controls_sim_runs(runner):
     result = runner.invoke(app, ["sim", "stop", "latest"])
     assert result.exit_code == 0
     assert "stopped" in result.output
+
+
+def test_sim_run_json_flag_prints_pure_json(runner, tmp_path):
+    config = _make_experiment(tmp_path, name="json-demo")
+    result = runner.invoke(app, ["sim", "run", str(config), "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["name"] == "json-demo"
+    assert data["backend"] == "python"
+    assert data["kind"] == "experiment"
+    record = runs.find_run(state.cfg(), "json-demo")
+    _wait_finished(record)
+    assert runs.effective_status(record) == runs.TERMINAL_OK
+
+
+def test_sim_logs_tails_sim_runs(runner):
+    runs.start_run(
+        state.cfg(),
+        name="log-sim",
+        command=["bash", "-c", "echo sim-log-line; sleep 30"],
+        backend="sim",
+        kind="test",
+    )
+    record = runs.find_run(state.cfg(), "log-sim")
+    log = record.directory / "stdout.log"
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline and "sim-log-line" not in log.read_text():
+        time.sleep(0.05)
+    try:
+        result = runner.invoke(app, ["sim", "logs", "log-sim"])
+        assert result.exit_code == 0
+        assert "sim-log-line" in result.output
+    finally:
+        runs.stop_run(record)
+
+
+def test_sim_logs_rejects_other_backends(runner):
+    runs.start_run(
+        state.cfg(), name="py-run", command=["sleep", "30"], backend="python", kind="test"
+    )
+    record = runs.find_run(state.cfg(), "py-run")
+    try:
+        result = runner.invoke(app, ["sim", "logs", "py-run"])
+        assert result.exit_code == 1
+        assert "not 'sim'" in all_output(result)
+    finally:
+        runs.stop_run(record)
+
+
+def test_sim_extensions_lists_tree(runner, fake_isaac_tree):
+    result = runner.invoke(app, ["sim", "extensions", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert {entry["name"] for entry in data} == {
+        "omni.replicator.core",
+        "omni.importer.urdf",
+        "omni.physx",
+    }
+    sources = {entry["name"]: entry["source"] for entry in data}
+    assert sources["omni.physx"] == "extsPhysics"
+    assert sources["omni.replicator.core"] == "exts"
+    assert all(entry["enabled"] is False for entry in data)
+
+
+def test_sim_extensions_table(runner, fake_isaac_tree):
+    result = runner.invoke(app, ["sim", "extensions"])
+    assert result.exit_code == 0
+    assert "omni.replicator.core" in result.output
+
+
+def test_sim_extensions_enabled_filter(runner, fake_isaac_tree):
+    toml = fake_isaac_tree / "exts" / "omni.replicator.core" / "config" / "extension.toml"
+    toml.write_text(
+        '[package]\nname = "omni.replicator.core"\n\n[core]\npreload = true\n',
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["sim", "extensions", "--enabled", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert [entry["name"] for entry in data] == ["omni.replicator.core"]
+    assert data[0]["enabled"] is True
+
+
+def test_sim_extensions_user_dir(runner, fake_isaac_tree):
+    result = runner.invoke(app, ["sim", "extensions", "--user"])
+    assert result.exit_code == 0
+    assert "No extensions found." in result.output
+    result = runner.invoke(app, ["sim", "extensions", "--user", "--json"])
+    assert json.loads(result.output) == []
+
+
+def test_sim_extensions_without_tool(runner):
+    result = runner.invoke(app, ["sim", "extensions"])
+    assert result.exit_code == 1
+    assert "not registered" in all_output(result)
+
+
+def test_sim_headless_dry_run_forces_flags(runner, tmp_path, fake_isaac_tree):
+    config = _make_experiment(tmp_path, backend="sim")
+    result = runner.invoke(app, ["sim", "headless", str(config), "--dry-run"])
+    assert result.exit_code == 0
+    assert "Dry run" in result.output
+    assert "--headless" in result.output
+    assert "--no-window" in result.output
+    assert runs.list_runs(state.cfg()) == []
+
+
+def test_sim_headless_starts_tracked_run(runner, tmp_path):
+    (tmp_path / "main.py").write_text(
+        "import sys\nprint(' '.join(sys.argv[1:]))\n", encoding="utf-8"
+    )
+    config = tmp_path / "experiment.yaml"
+    config.write_text(
+        "name: headless-demo\nbackend: python\nscript: main.py\n", encoding="utf-8"
+    )
+    result = runner.invoke(app, ["sim", "headless", str(config), "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["backend"] == "python"
+    record = runs.find_run(state.cfg(), "headless-demo")
+    assert record.extra["headless"] is True
+    _wait_finished(record)
+    assert runs.effective_status(record) == runs.TERMINAL_OK
+    stdout = (record.directory / "stdout.log").read_text()
+    assert "--headless" in stdout
+    assert "--no-window" in stdout

@@ -13,23 +13,20 @@ from ..checks import SECTION_KEYS, run_checks
 from ..core import experiment, runs
 from ..i18n import _
 from ..utils import output
-from .run_cmd import _require_run, _status_style
+from .run_cmd import _require_run, _status_style, run_logs
 
 app = typer.Typer(no_args_is_help=True)
 
 _CHECK_SECTIONS = ["isaac", "nvidia", "hardware", "storage"]
 
 
-@app.command(
-    "run",
-    help=_("sim.run_help"),
-    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
-)
-def sim_run(
+def _sim_launch(
     ctx: typer.Context,
-    config_path: Path = typer.Argument(..., help=_("sim.run.config_help")),
-    name: Optional[str] = typer.Option(None, "--name", help=_("sim.run.name_help")),
-    dry_run: bool = typer.Option(False, "--dry-run", help=_("sim.run.dry_run_help")),
+    config_path: Path,
+    name: Optional[str],
+    dry_run: bool,
+    json_output: bool,
+    force_headless: bool = False,
 ) -> None:
     cfg = state.cfg()
     try:
@@ -37,13 +34,16 @@ def sim_run(
     except experiment.ExperimentError as exc:
         output.fail(str(exc))
         return
+    extra_args = list(ctx.args)
+    if force_headless:
+        extra_args = ["--headless", "--no-window", *extra_args]
     try:
-        command, env = experiment.build_command(exp, cfg, extra_args=list(ctx.args))
+        command, env = experiment.build_command(exp, cfg, extra_args=extra_args)
     except experiment.ExperimentError as exc:
         output.fail(str(exc))
         return
 
-    if exp.backend != "sim":
+    if exp.backend != "sim" and not output.wants_json(json_output):
         output.echo(
             f"[yellow]{_('sim.run.backend_note', backend=exp.backend)}[/yellow]"
         )
@@ -65,13 +65,46 @@ def sim_run(
         env=env,
         backend=exp.backend,
         kind="experiment",
-        extra={"experiment": str(exp.config_path), "headless": exp.headless},
+        extra={
+            "experiment": str(exp.config_path),
+            "headless": exp.headless or force_headless,
+        },
     )
-    if output.wants_json(False):
+    if output.wants_json(json_output):
         output.echo_json(record.to_dict())
         return
     output.echo(f"[green]{_('sim.run.started', id=record.run_id)}[/green]")
     output.echo(f"  [dim]{_('sim.run.watch', id=record.run_id)}[/dim]")
+
+
+@app.command(
+    "run",
+    help=_("sim.run_help"),
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
+def sim_run(
+    ctx: typer.Context,
+    config_path: Path = typer.Argument(..., help=_("sim.run.config_help")),
+    name: Optional[str] = typer.Option(None, "--name", help=_("sim.run.name_help")),
+    dry_run: bool = typer.Option(False, "--dry-run", help=_("sim.run.dry_run_help")),
+    json_output: bool = typer.Option(False, "--json", help=_("flag.json")),
+) -> None:
+    _sim_launch(ctx, config_path, name, dry_run, json_output)
+
+
+@app.command(
+    "headless",
+    help=_("sim.headless_help"),
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
+def sim_headless(
+    ctx: typer.Context,
+    config_path: Path = typer.Argument(..., help=_("sim.run.config_help")),
+    name: Optional[str] = typer.Option(None, "--name", help=_("sim.run.name_help")),
+    dry_run: bool = typer.Option(False, "--dry-run", help=_("sim.run.dry_run_help")),
+    json_output: bool = typer.Option(False, "--json", help=_("flag.json")),
+) -> None:
+    _sim_launch(ctx, config_path, name, dry_run, json_output, force_headless=True)
 
 
 @app.command("status", help=_("sim.status_help"))
@@ -107,7 +140,7 @@ def sim_status(json_output: bool = typer.Option(False, "--json", help=_("flag.js
     if not active:
         output.echo(f"[dim]{_('sim.status.no_active')}[/dim]")
         return
-    table = Table(title=_("sim.status.active_title"), header_style="bold")
+    table = Table(header_style="bold", **output.table_styles())
     for column in ("ID", _("run.col.name"), _("run.col.status"), "PID"):
         table.add_column(column)
     for record in active:
@@ -133,6 +166,94 @@ def sim_check(verbose: bool = typer.Option(False, "--verbose", help=_("sim.check
         if result.hint and (verbose or result.status in ("fail", "warn")):
             output.echo(f"    [dim]↳ {result.hint}[/dim]")
     raise typer.Exit(exit_code)
+
+
+@app.command("logs", help=_("sim.logs_help"))
+def sim_logs(
+    query: str = typer.Argument(..., help=_("run.arg.query")),
+    lines: int = typer.Option(50, "--lines", "-n", help=_("run.flag.lines")),
+    follow: bool = typer.Option(False, "--follow", "-f", help=_("run.flag.follow")),
+    stream: str = typer.Option("stdout", "--stream", "-s", help=_("run.flag.stream")),
+) -> None:
+    record = _require_run(query)
+    if record.backend != "sim":
+        output.fail(_("sim.logs.wrong_backend", backend=record.backend))
+        return
+    run_logs(query, lines=lines, follow=follow, stream=stream)
+
+
+_EXTENSION_DIRS = (
+    "exts",
+    "extscache",
+    "extsInternal",
+    "extsUser",
+    "extsDeprecated",
+    "extsPhysics",
+)
+
+
+def _scan_extension_toml(path: Path) -> dict:
+    """Pick the two keys we care about out of an ``extension.toml`` (no TOML dep)."""
+    info: dict = {"name": None, "preload": False}
+    section = None
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return info
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            section = stripped[1:-1].strip()
+        elif "=" in stripped and not stripped.startswith("#"):
+            key, _, value = stripped.partition("=")
+            value = value.split("#", 1)[0].strip().strip("\"'")
+            if section == "package" and key.strip() == "name" and not info["name"]:
+                info["name"] = value
+            elif section == "core" and key.strip() == "preload":
+                info["preload"] = value.lower() == "true"
+    return info
+
+
+@app.command("extensions", help=_("sim.extensions_help"))
+def sim_extensions(
+    enabled: bool = typer.Option(False, "--enabled", help=_("sim.extensions.enabled_help")),
+    user: bool = typer.Option(False, "--user", help=_("sim.extensions.user_help")),
+    json_output: bool = typer.Option(False, "--json", help=_("flag.json")),
+) -> None:
+    resolved = state.cfg().resolve_tool("isaacsim")
+    root = resolved.expanded_path if resolved else None
+    if root is None or not root.is_dir():
+        output.fail(_("sim.status.unresolved"))
+        return
+    entries = []
+    for dirname in (("extsUser",) if user else _EXTENSION_DIRS):
+        base = root / dirname
+        if not base.is_dir():
+            continue
+        for toml_path in sorted(base.glob("*/config/extension.toml")):
+            info = _scan_extension_toml(toml_path)
+            if enabled and not info["preload"]:
+                continue
+            entries.append(
+                {
+                    "name": info["name"] or toml_path.parent.parent.name,
+                    "source": dirname,
+                    "enabled": info["preload"],
+                }
+            )
+    if output.wants_json(json_output):
+        output.echo_json(entries)
+        return
+    if not entries:
+        output.echo(f"[dim]{_('sim.extensions.none')}[/dim]")
+        return
+    table = Table(header_style="bold", **output.table_styles())
+    table.add_column(_("sim.extensions.col.name"))
+    table.add_column(_("sim.extensions.col.source"))
+    table.add_column(_("sim.extensions.col.enabled"))
+    for entry in entries:
+        table.add_row(entry["name"], entry["source"], "✓" if entry["enabled"] else "—")
+    output.echo(table)
 
 
 def _run_action(query: str, action: str) -> None:

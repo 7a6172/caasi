@@ -13,12 +13,17 @@ from typing import Optional
 import typer
 
 from .. import state
+from ..checks import CheckResult, run_checks
+from ..core import catalog
 from ..core import ros as ros_core
 from ..core import runs
 from ..i18n import _
 from ..utils import output
+from . import ecosystem as eco
 
 app = typer.Typer(no_args_is_help=True)
+
+DOCTOR_SECTIONS = ["ros", "robotics"]
 
 _EXTRA_SETTINGS = {"allow_extra_args": True, "ignore_unknown_options": True}
 
@@ -149,3 +154,73 @@ def moveit_test(
         output.fail(_("moveit.fail"))
         return
     output.echo(f"[green]{_('moveit.pass')}[/green]")
+
+
+def _planner_check() -> CheckResult:
+    """Planner availability straight from the ``motion`` catalog domain."""
+    found = [item.capability.key for item in catalog.resolve_domain("motion", state.cfg()) if item.found]
+    if found:
+        return CheckResult("robotics", _("moveit.doctor.planners"), "ok", ", ".join(found))
+    return CheckResult(
+        "robotics",
+        _("moveit.doctor.planners"),
+        "warn",
+        _("ecosystem.nothing_installed", domain="motion"),
+        _("moveit.doctor.planners_hint"),
+    )
+
+
+def _skip(name: str) -> CheckResult:
+    return CheckResult(
+        "robotics", name, "skip", _("doctor.robotics.no_ros2"), _("doctor.robotics.no_ros2_hint")
+    )
+
+
+def _doctor_extras() -> list[CheckResult]:
+    if not ros_core.find_ros2_binary():
+        return [
+            _skip(_("moveit.doctor.planners")),
+            _skip(MOVE_GROUP_PACKAGE),
+            _skip(MOVE_GROUP_NODE),
+        ]
+
+    results: list[CheckResult] = [_planner_check()]
+    prefix = _moveit_prefix()
+    if prefix is not None:
+        results.append(CheckResult("robotics", MOVE_GROUP_PACKAGE, "ok", str(prefix)))
+    else:
+        results.append(
+            CheckResult(
+                "robotics",
+                MOVE_GROUP_PACKAGE,
+                "fail",
+                _("moveit.not_installed"),
+                _("moveit.doctor.package_hint"),
+            )
+        )
+    nodes = _move_group_running()
+    if nodes:
+        results.append(CheckResult("robotics", MOVE_GROUP_NODE, "ok", ", ".join(nodes)))
+    else:
+        results.append(
+            CheckResult(
+                "robotics",
+                MOVE_GROUP_NODE,
+                "warn",
+                _("moveit.no_move_group"),
+                _("moveit.doctor.node_hint"),
+            )
+        )
+    return results
+
+
+@app.command("doctor", help=_("moveit.doctor_help"))
+def moveit_doctor(
+    verbose: bool = typer.Option(False, "--verbose", help=_("doctor.flag.verbose")),
+    json_output: bool = typer.Option(False, "--json", help=_("flag.json")),
+) -> None:
+    results = run_checks(DOCTOR_SECTIONS, state.cfg())
+    results.extend(_doctor_extras())
+    eco.render_checks(
+        {"group": "moveit", "sections": DOCTOR_SECTIONS}, results, verbose, json_output
+    )

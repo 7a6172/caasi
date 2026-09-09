@@ -13,12 +13,16 @@ import typer
 import yaml
 
 from .. import state
+from ..checks import CheckResult, run_checks
 from ..core import ros as ros_core
 from ..core import runs
 from ..i18n import _
 from ..utils import output
+from . import ecosystem as eco
 
 app = typer.Typer(no_args_is_help=True)
+
+DOCTOR_SECTIONS = ["ros", "robotics"]
 
 _EXTRA_SETTINGS = {"allow_extra_args": True, "ignore_unknown_options": True}
 
@@ -175,3 +179,60 @@ def nav_test(
         output.fail(_("nav.fail"))
         return
     output.echo(f"[green]{_('nav.pass')}[/green]")
+
+
+def _skip(name: str) -> CheckResult:
+    return CheckResult(
+        "robotics", name, "skip", _("doctor.robotics.no_ros2"), _("doctor.robotics.no_ros2_hint")
+    )
+
+
+def _doctor_extras() -> list[CheckResult]:
+    """Nav2-specific rows: the params file and the lifecycle nodes."""
+    if not ros_core.find_ros2_binary():
+        return [_skip(_("nav.doctor.params")), _skip(_("nav.doctor.nodes"))]
+
+    results: list[CheckResult] = []
+    prefix = _bringup_prefix()
+    params = _default_params_file(prefix)
+    if params is not None and params.is_file():
+        results.append(CheckResult("robotics", _("nav.doctor.params"), "ok", str(params)))
+    else:
+        detail = _("nav.not_installed") if prefix is None else _("nav.params_missing", path=str(params))
+        results.append(
+            CheckResult(
+                "robotics",
+                _("nav.doctor.params"),
+                "fail",
+                detail,
+                _("nav.doctor.params_hint"),
+            )
+        )
+    nodes = _running_nav_nodes()
+    if nodes:
+        results.append(
+            CheckResult("robotics", _("nav.doctor.nodes"), "ok", ", ".join(nodes))
+        )
+    else:
+        results.append(
+            CheckResult(
+                "robotics",
+                _("nav.doctor.nodes"),
+                "warn",
+                _("nav.no_nodes"),
+                _("nav.doctor.nodes_hint"),
+            )
+        )
+    return results
+
+
+@app.command("doctor", help=_("nav.doctor_help"))
+def nav_doctor(
+    verbose: bool = typer.Option(False, "--verbose", help=_("doctor.flag.verbose")),
+    json_output: bool = typer.Option(False, "--json", help=_("flag.json")),
+) -> None:
+    results = run_checks(DOCTOR_SECTIONS, state.cfg())
+    results.extend(_doctor_extras())
+    eco.render_checks(
+        {"group": "nav", "sections": DOCTOR_SECTIONS}, results, verbose, json_output
+    )

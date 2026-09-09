@@ -1,4 +1,4 @@
-"""Tests for `isaac system` (Linux /proc based)."""
+"""Tests for `caasi system` (Linux /proc based)."""
 
 from __future__ import annotations
 
@@ -65,3 +65,20 @@ def test_system_processes_table(runner):
     result = runner.invoke(app, ["system", "processes", "--limit", "2"])
     assert result.exit_code == 0
     assert all_output(result).strip()
+
+
+def test_system_doctor_json(runner):
+    result = runner.invoke(app, ["system", "doctor", "--json"])
+    assert result.exit_code in (0, 1)
+    data = json.loads(result.output)
+    assert data["group"] == "system"
+    assert data["sections"] == ["system", "hardware", "storage"]
+    assert data["exit_code"] == result.exit_code
+    sections = {check["section"] for check in data["checks"]}
+    assert sections == {"system", "hardware", "storage"}
+
+
+def test_system_doctor_table(runner):
+    result = runner.invoke(app, ["system", "doctor"])
+    assert result.exit_code in (0, 1)
+    assert "Kernel" in all_output(result)

@@ -45,7 +45,7 @@ def sensor_list(
             ]
         )
         return
-    table = Table(title=_("sensor.title"), header_style="bold")
+    table = Table(header_style="bold", **output.table_styles())
     table.add_column(_("sensor.col.name"))
     table.add_column(_("sensor.col.kind"))
     table.add_column(_("sensor.col.status"))

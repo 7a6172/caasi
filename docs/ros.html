@@ -10,7 +10,7 @@
 <body>
 <header class="topbar">
   <a class="brand" href="index.html">Caa<span>si</span></a>
-  <span class="badge">v0.1.0</span>
+  <span class="badge">v0.2.0</span>
   <span class="tagline">ROS Ecosystem: ros · nav · moveit · control</span>
   <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
 </header>
@@ -25,6 +25,11 @@ Orchestrate ROS 2, Nav2, MoveIt 2 and ros2_control <strong>by delegating to the 
 speaks DDS itself — it finds your distro, builds <code>ros2</code> command lines, and turns every
 long-lived launch into a <a href="runs.html">tracked run</a>.
 </p>
+<p>The GPU-accelerated half of the same graph — <code>isaac-ros</code>, <code>perception</code>,
+<code>slam</code>, <code>mapping</code>, <code>motion</code>, <code>nitros</code> and
+<code>pipeline</code> — lives on the
+<a href="accelerated.html">GPU-Accelerated Robotics</a> page; the commands below are the
+plain ROS 2 ones.</p>
 
 <h2 id="discovery">Distro discovery</h2>
 <p>Every command on this page resolves the distro the same way:</p>
@@ -38,6 +43,36 @@ long-lived launch into a <a href="runs.html">tracked run</a>.
 distro is located directly. When no <code>ros2</code> binary can be found, commands fail with:</p>
 <pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi ros list topics</span>
 <span class="err">Error: No ROS 2 installation found (no ros2 CLI). Install ROS 2 or set ROS_DISTRO — see 'caasi setup ros2'.</span></span></code></pre>
+
+<div class="callout note">
+  <div class="c-title">Sourced ROS 2 environment</div>
+  <p><code>ros2</code> itself only works after <code>setup.bash</code> has been sourced, so every
+  foreground call Caasi makes obeys one rule: if the resolved root
+  (<code>/opt/ros/&lt;distro&gt;</code>) already appears in <code>AMENT_PREFIX_PATH</code>,
+  <code>COLCON_PREFIX_PATH</code> or <code>PYTHONPATH</code>, your shell counts as sourced and the
+  plain binary runs — no wrapper, no extra <code>bash</code>. Otherwise the call becomes
+  <code>bash -c 'source "&lt;root&gt;/setup.bash" &gt;/dev/null 2&gt;&amp;1 &amp;&amp; exec "$@"'
+  -- &lt;ros2&gt; …</code> for that child process only; your interactive shell is never modified,
+  and when no distro resolves there is nothing to source, so the failure above is what you get.
+  This covers <code>ros status · doctor · list · topic · node · graph · service</code>,
+  <code>nav status · test</code>, <code>moveit status · plan · test</code>,
+  <code>control status · list</code> and the rows the <code>doctor</code> commands below add of
+  their own. The one exception is the shared <code>robotics</code> section those doctors run: it
+  calls <code>ros2 pkg prefix</code> directly, with no wrapper, so run them from a sourced shell —
+  an unsourced one makes installed stacks look missing.</p>
+  <p>The tracked runs on this page (<code>ros launch</code>, <code>nav launch</code>,
+  <code>moveit launch</code>, <code>ros topic --echo</code>) are detached children and inherit
+  Caasi's own environment unchanged — there is no sourcing step for them, so start them from a
+  sourced shell or from <code>caasi shell --ros</code>. (<code>scene capture</code> and the
+  <a href="accelerated.html">accelerated groups</a> do capture a sourced environment for their
+  runs: <code>bash -c 'source … &amp;&amp; env'</code>, 5 s timeout, memoised per
+  <code>setup.bash</code>, and only when the shell is not already sourced.)</p>
+  <p>Caasi never sets <code>ROS_DOMAIN_ID</code>, <code>ROS_LOCALHOST_ONLY</code> or
+  <code>RMW_IMPLEMENTATION</code> — whatever you export reaches the child untouched. It only
+  <em>reports</em> them: <code>RMW_IMPLEMENTATION</code> in <code>ros status</code> and as the
+  <code>DDS middleware</code> row of every <code>doctor</code> below, and the sourcing decision
+  itself as the <code>Environment sourced</code> row.</p>
+</div>
 
 <h2 id="ros">caasi ros</h2>
 
@@ -151,6 +186,53 @@ JSON: <code>{"node": "/talker", "info": "…"}</code>.</p>
 <span class="in">caasi ros graph --json | jq '.nodes'</span>
 <span class="out">["/listener", "/talker"]</span></span></code></pre>
 
+<h3 id="ros-service">caasi ros service</h3>
+<pre class="syn"><code>caasi ros service list [--json]
+caasi ros service info NAME [--json]
+caasi ros service call NAME TYPE [--json] [-- CALL_ARGS…]</code></pre>
+<p>Inspect and call ROS 2 services — three thin verbs over <code>ros2 service list|info|call</code>.
+Caasi builds no client, imports no <code>rclpy</code> and parses no request: the command line is
+handed to the discovered <code>ros2</code> binary, whose output and exit code are mirrored.</p>
+<ul>
+  <li><strong>list</strong> — <code>ros2 service list</code>; the same call as
+      <code>ros list services</code>. JSON is the raw name array, an empty graph prints
+      <code>No services found.</code> and still exits <code>0</code>.</li>
+  <li><strong>info</strong> — <code>ros2 service info NAME</code>: type, client and server count.
+      Unknown service → <code>Error: Service '/nope' not found.</code> exit <code>1</code>.
+      JSON: <code>{"service": "/toggle", "info": "Type: std_srvs/srv/SetBool\n…"}</code>.</li>
+  <li><strong>call</strong> — <code>ros2 service call NAME TYPE CALL_ARGS…</code>. The request YAML
+      and any other <code>ros2 service call</code> flag go after <code>--</code> and are appended
+      verbatim. JSON: <code>{"service", "type", "returncode", "stdout"}</code>, and the delegated
+      exit code is returned in both modes. A service that never appears is not an error Caasi
+      invents: <code>ros2 service call</code> waits for it, and the 20 s probe timeout ends the
+      wait — <code>timed out after 20.0s</code>, exit <code>1</code>.</li>
+</ul>
+<pre class="term"><code><span class="t-head">shell — this machine, no nodes running</span><span class="t-body"><span class="in">caasi ros service list</span>
+<span class="warn">No services found.</span>
+<span class="in">caasi ros service list --json</span>
+<span class="out">[]</span>
+<span class="in">caasi ros service info /nope</span>
+<span class="err">Error: Service '/nope' not found.</span>
+<span class="in">caasi ros service call /nope std_srvs/srv/Nope --json</span>
+<span class="out">{
+  "service": "/nope",
+  "type": "std_srvs/srv/Nope",
+  "returncode": 1,
+  "stdout": ""
+}</span>
+<span class="err">exit code: 1</span></span></code></pre>
+<pre class="term"><code><span class="t-head">shell — with a node running</span><span class="t-body"><span class="in">caasi ros service list</span>
+<span class="out">ROS 2 services
+  /talker/describe_parameters
+  /talker/get_parameters
+  /toggle</span>
+<span class="in">caasi ros service info /toggle</span>
+<span class="out">Type: std_srvs/srv/SetBool
+Client count: 1
+Server count: 1</span>
+<span class="in">caasi ros service call /toggle std_srvs/srv/SetBool -- "{data: true}"</span>
+<span class="dim"># → 'ros2 service call /toggle std_srvs/srv/SetBool {data: true}' — output and exit code pass through</span></span></code></pre>
+
 <h2 id="nav">caasi nav — Nav2</h2>
 <p>Nav2 orchestration on top of the same delegation: Caasi checks that
 <code>nav2_bringup</code> is installed (via <code>ros2 pkg prefix nav2_bringup</code>), starts the
@@ -229,6 +311,51 @@ running Nav2 nodes — and an exit code you can script against:</p>
 <p>JSON: <code>{"ok": bool, "checks": [{"check", "ok", "detail"}, …]}</code>. Exit
 <code>0</code> when all checks pass, <code>1</code> otherwise.</p>
 
+<h3 id="nav-doctor">caasi nav doctor</h3>
+<pre class="syn"><code>caasi nav doctor [--verbose] [--json]</code></pre>
+<p>The check-table version of <code>nav test</code>. It runs two shared sections — <code>ros</code>
+(distro, setup file, <code>ros2</code> binary, whether the environment is sourced,
+<code>RMW_IMPLEMENTATION</code>) and <code>robotics</code> (one <code>ros2 pkg prefix</code> probe
+per stack: <code>nav2_bringup</code>, <code>moveit_core</code>, <code>controller_manager</code>,
+<code>slam_toolbox</code>) — then adds two Nav2 rows of its own: the default params file shipped
+with <code>nav2_bringup</code> and the Nav2 nodes currently in the graph. Every row is
+<code>ok</code>, <code>warn</code>, <code>fail</code> or <code>skip</code>; exit is <code>0</code>
+unless a row failed, so warnings alone never fail the gate. The <code>robotics</code> section on
+its own is <code>caasi doctor --component robotics</code>. Each stack probe is a direct
+<code>ros2 pkg prefix</code> call with an 8 s budget: a probe that times out is a warning
+(<code>probe timed out for '&lt;package&gt;'</code>), any other non-zero exit is the
+<code>package '&lt;package&gt;' not found</code> failure below.</p>
+<pre class="term"><code><span class="t-head">shell — this machine, no nodes running</span><span class="t-body"><span class="in">caasi nav doctor</span>
+<span class="ok">✓ ROS 2 distro — jazzy
+✓ ROS 2 setup file — /opt/ros/jazzy/setup.bash
+✓ ros2 CLI — /opt/ros/jazzy/bin/ros2
+✓ Environment sourced — ROS 2 environment is present in this shell</span>
+<span class="dim">• DDS middleware — RMW_IMPLEMENTATION not set (distro default will be used)</span>
+<span class="ok">✓ Nav2 — nav2_bringup</span>
+<span class="err">✗ MoveIt 2 — package 'moveit_core' not found
+    ↳ Install the moveit2 packages into your ROS 2 distro.
+✗ ros2_control — package 'controller_manager' not found
+    ↳ Install the ros2_control packages into your ROS 2 distro.</span>
+<span class="ok">✓ SLAM Toolbox — slam_toolbox
+✓ Nav2 params file — /opt/ros/jazzy/share/nav2_bringup/params/nav2_params.yaml</span>
+<span class="warn">! Lifecycle nodes — No Nav2 nodes are running.
+    ↳ Start the stack with 'caasi nav launch'.</span>
+<span class="err">exit code: 1</span>
+<span class="in">caasi nav doctor --json | jq '.group, .sections, .checks[-1], .exit_code'</span>
+<span class="out">"nav"
+["ros", "robotics"]
+{
+  "section": "robotics",
+  "name": "Lifecycle nodes",
+  "status": "warn",
+  "detail": "No Nav2 nodes are running.",
+  "hint": "Start the stack with 'caasi nav launch'."
+}
+1</span></span></code></pre>
+<p>JSON is <code>{"group": "nav", "sections": ["ros", "robotics"], "checks": [{"section", "name",
+"status", "detail", "hint"}], "exit_code"}</code>. Hints print for failures and warnings;
+<code>--verbose</code> prints them for passing rows too.</p>
+
 <h2 id="moveit">caasi moveit — MoveIt 2</h2>
 <p>Same pattern for manipulation: locate <code>moveit_ros_move_group</code>, launch your MoveIt
 config, and verify the <code>move_group</code> node is up. Planning always happens inside MoveIt 2.</p>
@@ -271,6 +398,26 @@ ready / <code>1</code> not ready:</p>
 <p>Three-check readiness gate like <code>nav test</code>: <code>ros2</code> binary,
 <code>moveit_ros_move_group</code> package, live <code>move_group</code> node.
 JSON <code>{"ok", "checks"}</code>, exit <code>0</code>/<code>1</code>.</p>
+
+<h3 id="moveit-doctor">caasi moveit doctor</h3>
+<pre class="syn"><code>caasi moveit doctor [--verbose] [--json]</code></pre>
+<p>The same two shared sections as <code>nav doctor</code> — <code>ros</code> and
+<code>robotics</code>, same exit semantics (<code>1</code> only on a failed row) — plus three
+MoveIt rows: the motion-planner capability behind <code>caasi motion</code>, the
+<code>moveit_ros_move_group</code> package, and a live <code>move_group</code> node. JSON carries
+<code>"group": "moveit"</code>.</p>
+<pre class="term"><code><span class="t-head">shell — this machine, no nodes running</span><span class="t-body"><span class="in">caasi moveit doctor</span>
+<span class="dim"># …the same `ros` and `robotics` rows as `caasi nav doctor`, then:</span>
+<span class="warn">! Motion planners — No motion capability is installed.
+    ↳ See which planners are installed with 'caasi motion status'.</span>
+<span class="err">✗ moveit_ros_move_group — MoveIt 2 not found (package moveit_ros_move_group missing); install ros-$ROS_DISTRO-moveit.
+    ↳ Install ros-$ROS_DISTRO-moveit.</span>
+<span class="warn">! move_group — No move_group node is running.
+    ↳ Start a move_group with 'caasi moveit launch &lt;file&gt;' or 'caasi motion serve'.</span>
+<span class="err">exit code: 1</span></span></code></pre>
+<p>The planner row lists whichever <code>motion</code> capabilities resolve; none resolving is a
+warning, not a failure — only a missing <code>moveit_ros_move_group</code> package fails the
+gate.</p>
 
 <h2 id="control">caasi control — ros2_control</h2>
 <p>Controller management via <code>ros2 control</code> (the <code>ros2controlcli</code> package),
@@ -335,13 +482,31 @@ Controller config looks good (2 controller(s)).</span>
 <p>Missing argument → <code>Error: Pass a controller params YAML file…</code>; missing file →
 params-not-found error; exit <code>0</code> clean / <code>1</code> any issue (both modes).</p>
 
+<h3 id="control-doctor">caasi control doctor</h3>
+<pre class="syn"><code>caasi control doctor [--verbose] [--json]</code></pre>
+<p>Same shared <code>ros</code> + <code>robotics</code> sections and same exit rule as
+<code>nav doctor</code>, plus two rows: the <code>ros2controlcli</code> package that
+<code>control list</code> delegates to, and a live <code>controller_manager</code> node. JSON
+carries <code>"group": "control"</code>.</p>
+<pre class="term"><code><span class="t-head">shell — this machine, no nodes running</span><span class="t-body"><span class="in">caasi control doctor</span>
+<span class="dim"># …the same `ros` and `robotics` rows as `caasi nav doctor`, then:</span>
+<span class="err">✗ ros2controlcli — ros2_control CLI not found (package ros2controlcli missing); install ros-$ROS_DISTRO-ros2controlcli.
+    ↳ Install ros-$ROS_DISTRO-ros2controlcli.</span>
+<span class="warn">! controller_manager — No controller_manager node is running.
+    ↳ Start the hardware interface that hosts controller_manager, then run 'caasi control list'.</span>
+<span class="err">exit code: 1</span></span></code></pre>
+<p><code>control check</code> stays the offline answer for a params file; this is the online one —
+it tells you whether <code>ros2 control list_controllers</code> can work at all right now.</p>
+
 <h2 id="pattern">The shared pattern</h2>
 <table>
   <thead><tr><th>You want…</th><th>Use</th></tr></thead>
   <tbody>
     <tr><td>“what's on the graph?”</td><td><code>ros status</code> · <code>ros graph</code> · <code>ros list …</code></td></tr>
+    <tr><td>“call a service”</td><td><code>ros service list</code> · <code>ros service info</code> · <code>ros service call</code> → <code>ros2 service …</code></td></tr>
     <tr><td>“start something long-lived”</td><td><code>ros launch</code> · <code>nav launch</code> · <code>moveit launch</code> · <code>ros topic --echo</code> → all become tracked runs</td></tr>
     <tr><td>“is the stack ready?” (scriptable)</td><td><code>nav test</code> · <code>moveit test</code> · <code>moveit plan</code> · <code>control check</code> → exit 0/1 + <code>--json</code></td></tr>
+    <tr><td>“what's missing on this machine?”</td><td><code>nav doctor</code> · <code>moveit doctor</code> · <code>control doctor</code> → check table, exit 1 on any failure</td></tr>
     <tr><td>“why is my config broken?”</td><td><code>nav inspect</code> · <code>control check</code> · <code>ros doctor</code></td></tr>
     <tr><td>anything else ROS</td><td><a href="native.html">caasi native ros …</a> — raw <code>ros2</code> pass-through</td></tr>
   </tbody>
@@ -349,11 +514,11 @@ params-not-found error; exit <code>0</code> clean / <code>1</code> any issue (bo
 
 <div class="page-nav">
   <a class="prev" href="review.html"><span class="pn-label">Previous</span><span class="pn-title">← Review</span></a>
-  <a class="next" href="native.html"><span class="pn-label">Next</span><span class="pn-title">Native &amp; Shell →</span></a>
+  <a class="next" href="accelerated.html"><span class="pn-label">Next</span><span class="pn-title">GPU-Accelerated Robotics →</span></a>
 </div>
 
 <footer class="doc-footer">
-  Caasi CLI 0.1.0 — these pages live in <code>docs/</code> and need no build step.
+  Caasi CLI 0.2.0 — these pages live in <code>docs/</code> and need no build step.
   Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
 </footer>
 </main>

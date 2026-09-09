@@ -91,3 +91,52 @@ def view_attach(
         return
     pid = viewers_core.launch(command, {"CAASI_RUN_DIR": str(record.directory)})
     output.echo(f"[green]{_('view.started', viewer=name, pid=pid)}[/green]")
+
+
+@app.command("run", help=_("view.run_help"))
+def view_run(
+    query: str = typer.Argument(..., help=_("run.arg.query")),
+    viewer: Optional[str] = typer.Option(None, "--viewer", help=_("view.flag.viewer")),
+    dry_run: bool = typer.Option(False, "--dry-run", help=_("view.flag.dry_run")),
+    json_output: bool = typer.Option(False, "--json", help=_("flag.json")),
+) -> None:
+    record = _require_run(query)
+    assert record.directory is not None
+    artifacts = viewers_core.recorded_artifacts(record.directory)
+    if not artifacts:
+        output.fail(_("replay.no_data", id=record.run_id))
+        return
+    if viewer and viewer not in viewers_core.VIEWER_NAMES:
+        output.fail(_("replay.bad_viewer", viewer=viewer))
+        return
+    name, binary = viewers_core.find_viewer(viewer)
+    if not name or not binary:
+        output.fail(_("replay.no_viewer"))
+        return
+    target = None
+    if name == "open3d":
+        target = viewers_core.find_3d_file(artifacts)
+        if target is None:
+            output.fail(_("replay.no_3d", id=record.run_id))
+            return
+    command = viewers_core.viewer_command(name, binary, target)
+    env = {"CAASI_RUN_DIR": str(record.directory)}
+    payload = {
+        "id": record.run_id,
+        "viewer": name,
+        "command": command,
+        "artifacts": [str(a.relative_to(record.directory)) for a in artifacts],
+    }
+    if output.wants_json(json_output):
+        if not dry_run:
+            payload["pid"] = viewers_core.launch(command, env)
+        output.echo_json(payload)
+        return
+    output.echo(f"[bold]{record.name}[/bold] [dim]({record.run_id})[/dim]")
+    output.echo(f"  [bold]{_('replay.artifacts')}[/bold] " + ", ".join(payload["artifacts"]))
+    if dry_run:
+        output.echo(f"[bold]{_('replay.dry_title')}[/bold]")
+        output.echo(f"  command: {' '.join(command)}")
+        return
+    pid = viewers_core.launch(command, env)
+    output.echo(f"[green]{_('view.started', viewer=name, pid=pid)}[/green]")

@@ -13,13 +13,14 @@ from typing import Optional
 import typer
 
 from .. import state
+from ..core import rosenv
 from ..i18n import _
 from ..utils import output, shell
 
 
-def build_shell_env() -> dict[str, str]:
+def build_shell_env(source_ros: bool = False) -> dict[str, str]:
     cfg = state.cfg()
-    env = dict(os.environ)
+    env = dict(rosenv.sourced_env()) if source_ros else dict(os.environ)
     for tool, env_var in (("isaacsim", "ISAACSIM_PATH"), ("isaaclab", "ISAACLAB_PATH")):
         resolved = cfg.resolve_tool(tool)
         path = resolved.expanded_path if resolved else None
@@ -34,9 +35,10 @@ def build_shell_env() -> dict[str, str]:
 
 def shell_command(
     command: Optional[str] = typer.Option(None, "--command", "-c", help=_("shell.flag.command")),
+    ros: bool = typer.Option(False, "--ros", help=_("shell.flag.ros")),
     json_output: bool = typer.Option(False, "--json", help=_("flag.json")),
 ) -> None:
-    env = build_shell_env()
+    env = build_shell_env(source_ros=ros)
     if command:
         result = shell.run_cmd(["bash", "-c", command], timeout=None, env=env)
         if output.wants_json(json_output):

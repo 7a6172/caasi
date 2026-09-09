@@ -36,7 +36,7 @@ def test_run_list_empty(runner):
 def test_run_help_lists_subcommands(runner):
     result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
-    for sub in ("list", "status", "logs", "stop", "pause", "resume", "delete", "inspect"):
+    for sub in ("list", "status", "logs", "attach", "stop", "pause", "resume", "delete", "inspect"):
         assert sub in result.output
 
 
@@ -151,3 +151,56 @@ def test_run_inspect(runner):
     data = json.loads(result.output)
     paths = {f["path"] for f in data["files"]}
     assert {"manifest.yaml", "run.sh", "stdout.log", "stderr.log"} <= paths
+
+
+def test_run_attach_shows_both_streams(runner):
+    record = _start("talker", ["bash", "-c", "echo out-line; echo err-line >&2"])
+    _wait_finished(record)
+
+    result = runner.invoke(app, ["run", "attach", record.run_id])
+    assert result.exit_code == 0, result.output
+    assert "Attached to run" in result.output
+    assert "[stdout] out-line" in result.output
+    assert "[stderr] err-line" in result.output
+
+
+def test_run_attach_follows_a_live_run(runner):
+    record = _start("slow", ["bash", "-c", "echo first; sleep 0.6; echo second"])
+    result = runner.invoke(app, ["run", "attach", record.run_id])
+    assert result.exit_code == 0, result.output
+    assert "[stdout] first" in result.output
+    assert "[stdout] second" in result.output
+
+
+def test_run_attach_detaches_on_ctrl_c(runner, monkeypatch):
+    record = _start("sleeper", ["sleep", "30"])
+    original_sleep = time.sleep
+    try:
+        def interrupt(_seconds):
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(time, "sleep", interrupt)
+        result = runner.invoke(app, ["run", "attach", record.run_id])
+        assert result.exit_code == 0, result.output
+        assert "Detached from run" in result.output
+        assert runs.effective_status(record) == runs.RUNNING
+    finally:
+        monkeypatch.setattr(time, "sleep", original_sleep)
+        runs.stop_run(record)
+
+
+def test_run_attach_without_logs(runner):
+    record = _start("talker", ["bash", "-c", "echo hi"])
+    _wait_finished(record)
+    (record.directory / "stdout.log").unlink()
+    (record.directory / "stderr.log").unlink()
+
+    result = runner.invoke(app, ["run", "attach", record.run_id])
+    assert result.exit_code == 1
+    assert "No log files" in all_output(result)
+
+
+def test_run_attach_unknown_run(runner):
+    result = runner.invoke(app, ["run", "attach", "nope"])
+    assert result.exit_code == 1
+    assert "No run matching 'nope'" in all_output(result)

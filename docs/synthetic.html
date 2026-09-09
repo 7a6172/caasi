@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Synthetic Data &amp; Teleoperation — Caasi CLI Documentation</title>
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/theme.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html">Caa<span>si</span></a>
+  <span class="badge">v0.2.0</span>
+  <span class="tagline">Synthetic data &amp; teleoperation: synth · teleop</span>
+  <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
+</header>
+<div class="layout">
+<aside id="sidebar"></aside>
+<main>
+
+<h1>Synthetic Data &amp; Teleoperation</h1>
+<p class="lead">
+Generate synthetic data with Isaac Sim Replicator as tracked runs, drive the robot through
+upstream ROS teleop stacks, and record demonstrations that land as first-class datasets — so
+the chain record → inspect → train → evaluate needs no glue code. Caasi adds no SDG engine and
+no teleoperation of its own: it resolves what is installed and launches it.
+</p>
+
+<h2 id="synth">caasi synth</h2>
+<p>Caasi implements no SDG engine. <code>generate</code> reuses the experiment runner
+(<code>backend: sim</code>) after checking that the Replicator extension resolves from the
+<code>sdg</code> catalog domain, and the run writes into <code>CAASI_DATASET_DIR</code>.
+<code>preview</code> and <code>validate</code> are filesystem-only summaries of the synthetic
+tree — one <code>rgb/</code> frame counts as one produced episode and no image is ever
+decoded.</p>
+
+<h3 id="synth-status">caasi synth status</h3>
+<pre class="syn"><code>caasi synth status [--json]</code></pre>
+<p>Reports the two capabilities of the <code>sdg</code> catalog domain —
+<code>replicator</code> (<code>exts/omni.replicator.core</code>, core) and
+<code>writer_kit</code> (<code>exts/omni.replicator.writer.kit</code>) — both detected as
+paths under the Isaac Sim installation. On a machine without Isaac Sim this is the real
+output:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi synth status</span>
+<span class="out">Synthetic Data Generation
+Capability  State    Detail
+replicator  missing  not installed
+writer_kit  absent   not installed
+0 of 2 capabilities installed.</span></span></code></pre>
+<p>The core capability shows <span class="pill fail">missing</span>, the optional one
+<span class="pill">absent</span>; the summary line counts installed capabilities. Exit
+<code>0</code> — this is a report, not a gate. JSON carries the full payload:
+<code>domain</code>, <code>kind</code>, <code>tool</code>, <code>root</code>,
+<code>total</code>, <code>installed</code>, <code>capabilities</code> (each with
+<code>key</code>, <code>label</code>, <code>group</code>, <code>core</code>,
+<code>found</code>, <code>how</code>, <code>value</code>, <code>launch</code>,
+<code>script</code>, <code>nodes</code>), <code>launcher</code> and <code>running</code>:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi synth status --json | jq '{domain, total, installed, running}'</span>
+<span class="out">{ "domain": "sdg", "total": 2, "installed": 0, "running": [] }</span></span></code></pre>
+<p>The same hardware/software surface is gated by <a href="environment.html#doctor">doctor</a>'s
+<code>data</code> component, which also covers the bag-storage plugins and the download CLIs:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi doctor --component data</span>
+<span class="out">Environment Diagnostics
+
+Data & Recording</span>
+<span class="err">  ✗ Replicator — not found (exts/omni.replicator.core)
+      ↳ Install it, or point Caasi at the renamed upstream with `caasi config set
+catalog.data.replicator.paths [...]`.</span>
+<span class="out">  • MCAP bag storage — not found (rosbag2_storage_mcap)
+  • SQLite3 bag storage — not found (rosbag2_storage_default_plugins)
+  • Hugging Face CLI — not found (hf, huggingface-cli)
+  • NGC CLI — not found (ngc)</span>
+<span class="err">✘ 1 issue(s) found, 0 warning(s). Run with --verbose for hints.
+exit code: 1</span></span></code></pre>
+
+<h3 id="synth-generate">caasi synth generate</h3>
+<pre class="syn"><code>caasi synth generate CONFIG_PATH [--episodes N] [--output PATH] [--dry-run] [-- SCRIPT_ARGS…]</code></pre>
+<table>
+  <thead><tr><th>Parameter</th><th>Kind</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>CONFIG_PATH</code></td><td>argument</td><td>path</td><td>required</td><td>Experiment YAML with <code>backend: sim</code> and a <code>script</code> — the same file <a href="simulation.html#experiment"><code>sim run</code></a> consumes.</td></tr>
+    <tr><td><code>--episodes</code></td><td>option</td><td>int</td><td>—</td><td>→ script arg <code>--episodes N</code>; also recorded in <code>metadata.json</code>.</td></tr>
+    <tr><td><code>--output</code></td><td>option</td><td>path</td><td>—</td><td>Write the dataset here instead of under <code>datasets/</code> (used as-is; its basename becomes the dataset name).</td></tr>
+    <tr><td><code>--dry-run</code></td><td>option</td><td>flag</td><td>off</td><td>Print the command without starting it.</td></tr>
+    <tr><td>trailing args</td><td>pass-through</td><td></td><td></td><td>Anything Caasi doesn't recognize is appended verbatim to the script's argv.</td></tr>
+  </tbody>
+</table>
+<p>What happens on launch:</p>
+<ol>
+  <li>The Replicator gate runs first: <code>sdg.replicator</code> must resolve, even for
+      <code>--dry-run</code>. When it doesn't, the real failure is
+      <code>Error: Isaac Sim Replicator was not found (exts/omni.replicator.core). Install
+      Isaac Sim, or point Caasi at it with `caasi config set catalog.sdg.replicator.paths
+      [...]`.</code> (exit 1).</li>
+  <li>The dataset directory is created: <code>--output PATH</code> as-is, otherwise
+      <code>&lt;name-slug&gt;-&lt;YYYYmmdd-HHMMSS&gt;</code> in the project's
+      <code>datasets/</code> or <code>paths.datasets</code> (default
+      <code>~/.caasi/datasets</code>) — the same rules as
+      <a href="data.html#dataset-generate"><code>dataset generate</code></a>.</li>
+  <li>The script receives <code>--dataset-dir &lt;dir&gt;</code> and the environment variable
+      <code>CAASI_DATASET_DIR</code> (plus <code>--headless</code> when the experiment declares
+      it) — the generator writes the synthetic tree there.</li>
+  <li>A detached run (<code>kind: dataset</code>, the experiment's backend) is started and
+      <code>metadata.json</code> is written.</li>
+</ol>
+<p>The synthetic dataset tree:</p>
+<pre><code>sdg-dome-20260907-101500/
+├── metadata.json
+├── rgb/              # one frame = one produced episode
+├── depth/
+├── segmentation/
+├── bounding_boxes/
+└── metadata/</code></pre>
+<p>and its <code>metadata.json</code>:</p>
+<pre><code>{
+  "name": "sdg-dome",
+  "created": "2026-09-07T10:15:00+08:00",
+  "generator": "replicator",
+  "replicator": "/opt/isaac-sim-6.0/exts/omni.replicator.core",
+  "experiment": "/home/you/demo/experiments/sdg_dome.yaml",
+  "backend": "sim",
+  "episodes": 200,
+  "status": "generating",
+  "run_id": "20260907-101500-sdg-dome"
+}</code></pre>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi synth generate experiments/sdg_dome.yaml --episodes 200 --dry-run</span>
+<span class="out">Dry run — nothing was started:
+  command: /opt/isaac-sim-6.0/python.sh /home/you/demo/scripts/sdg_collect.py --episodes 200 --headless --dataset-dir &lt;dir&gt;
+  cwd:     /home/you/demo/experiments</span>
+<span class="in">caasi synth generate experiments/sdg_dome.yaml --episodes 200</span>
+<span class="ok">Synthetic data generation started: /home/you/.caasi/datasets/sdg-dome-20260907-101500</span>
+<span class="dim">  Follow it with: caasi logs 20260907-101500-sdg-dome -f</span></span></code></pre>
+
+<h3 id="synth-preview">caasi synth preview</h3>
+<pre class="syn"><code>caasi synth preview QUERY [--json]</code></pre>
+<p><code>QUERY</code> is the same argument <a href="data.html#dataset-query"><code>dataset
+inspect</code></a> takes: a path, <code>latest</code>/<code>last</code>/<code>newest</code>, or
+a unique name/prefix — unknown or ambiguous →
+<code>Error: No dataset matching '&lt;query&gt;'.</code> (exit 1). Preview counts files, never
+decodes images:</p>
+<ul>
+  <li><strong>episodes produced</strong> = number of files in <code>rgb/</code>;</li>
+  <li>per-directory file counts (recursive) for <code>rgb</code>, <code>depth</code>,
+      <code>segmentation</code>, <code>bounding_boxes</code> and <code>metadata</code>;</li>
+  <li>total file count and byte size of the whole dataset;</li>
+  <li>elapsed seconds since the metadata's <code>created</code> timestamp;</li>
+  <li>the linked run's id and live status.</li>
+</ul>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi synth preview latest</span>
+<span class="out">sdg-dome /home/you/.caasi/datasets/sdg-dome-20260907-101500
+  generator: replicator
+  episodes: 200 produced, 200 declared
+  size: 1.9 GB
+  elapsed: 3421.5s
+  Run: 20260907-101500-sdg-dome (succeeded)
+directory       files
+rgb               200
+depth             200
+segmentation      200
+bounding_boxes    200
+metadata            3</span>
+<span class="in">caasi synth preview latest --json | jq '{episodes_produced, episodes_declared}'</span>
+<span class="out">{ "episodes_produced": 200, "episodes_declared": 200 }</span></span></code></pre>
+<p>JSON payload: <code>{"path", "name", "generator", "episodes_declared",
+"episodes_produced", "counts", "files", "bytes", "elapsed", "run"}</code>. <code>run</code> is
+<code>null</code> when unlinked or <code>{"id", "status": "unknown"}</code> if the run was
+deleted; <code>elapsed</code> is <code>null</code> when <code>created</code> is unparseable.</p>
+
+<h3 id="synth-validate">caasi synth validate</h3>
+<pre class="syn"><code>caasi synth validate QUERY [--json]</code></pre>
+<p>Starts from the structural checks of
+<a href="data.html#dataset-validate"><code>dataset validate</code></a> (metadata present, valid
+JSON object, <code>name</code> set, declared episode count vs <code>episodes/</code>) and adds
+two SDG rules, with these exact issue strings:</p>
+<ul>
+  <li>when metadata declares an integer <code>episodes</code> and <code>rgb/</code> exists:
+      <code>metadata declares 200 episode(s) but rgb/ holds 197</code>;</li>
+  <li>for each of <code>depth/</code>, <code>segmentation/</code>,
+      <code>bounding_boxes/</code> that exists:
+      <code>segmentation/ holds 0 file(s) but rgb/ holds 197</code> — each must match the
+      <code>rgb/</code> count.</li>
+</ul>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi synth validate latest</span>
+<span class="err">2 issue(s) found:
+  • metadata declares 200 episode(s) but rgb/ holds 197
+  • segmentation/ holds 0 file(s) but rgb/ holds 197
+exit code: 1</span>
+<span class="in">caasi synth validate latest --json</span>
+<span class="out">{
+  "path": "/home/you/.caasi/datasets/sdg-dome-20260907-101500",
+  "valid": false,
+  "counts": { "rgb": 197, "depth": 197, "segmentation": 0, "bounding_boxes": 197, "metadata": 3 },
+  "issues": ["metadata declares 200 episode(s) but rgb/ holds 197",
+             "segmentation/ holds 0 file(s) but rgb/ holds 197"]
+}</span>
+<span class="err">exit code: 1</span></span></code></pre>
+<p>A consistent dataset prints <code>Dataset at &lt;path&gt; is consistent.</code> and exits
+<code>0</code>; any issue exits <code>1</code> — in both human and JSON mode.</p>
+
+<h2 id="teleop">caasi teleop</h2>
+<p>Drive a robot, record demonstrations, replay recorded bags. Every teleop command delegates:
+each backend is an upstream ROS package (or an upstream script) that Caasi only resolves and
+launches — <code>ros2 launch</code> for the keyboard/joystick stacks, the resolved Isaac Sim XR
+script, and <code>ros2 bag record</code>/<code>play</code> for demonstrations. Caasi implements
+no teleoperation itself.</p>
+<p>The group exposes exactly four verbs — <code>start</code>, <code>record</code>,
+<code>stop</code>, <code>replay</code>; there is no <code>teleop status</code>. What is
+installed lives in the <code>teleop</code> catalog domain:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi config catalog teleop</span>
+<span class="out">Teleoperation teleop · ros
+capability  upstream targets       launch file                        caasi group
+keyboard    teleop_twist_keyboard  teleop_twist_keyboard              —
+                                   teleop-launch.py
+joy         teleop_twist_joy, joy  teleop_twist_joy                   —
+                                   teleop-launch.py
+xr          isaac-sim.xr.vr.sh     —                                  —
+record      rosbag2                —                                  —
+
+Every field is overridable: `caasi config set catalog.&lt;domain&gt;.&lt;capability&gt;.&lt;field&gt; &lt;value&gt;`</span></span></code></pre>
+<table>
+  <thead><tr><th>Backend</th><th>Upstream targets</th><th>How Caasi starts it</th></tr></thead>
+  <tbody>
+    <tr><td><code>keyboard</code> (core)</td><td>ROS package <code>teleop_twist_keyboard</code></td><td><code>ros2 launch teleop_twist_keyboard teleop-launch.py</code></td></tr>
+    <tr><td><code>joy</code></td><td>ROS packages <code>teleop_twist_joy</code>, <code>joy</code></td><td><code>ros2 launch teleop_twist_joy teleop-launch.py</code></td></tr>
+    <tr><td><code>xr</code></td><td>path <code>isaac-sim.xr.vr.sh</code></td><td>the resolved script, run directly</td></tr>
+    <tr><td><code>record</code> (core)</td><td>ROS package <code>rosbag2</code></td><td><code>ros2 bag record</code> / <code>ros2 bag play</code></td></tr>
+  </tbody>
+</table>
+<div class="callout note">
+  <div class="c-title">Delegation, not reimplementation</div>
+  <p>An upstream rename is a catalog edit, not a code change:
+  <code>caasi config set catalog.teleop.&lt;capability&gt;.&lt;field&gt; [...]</code> (see
+  <a href="configuration.html#config-cmd">caasi config</a>).</p>
+</div>
+
+<h3 id="teleop-start">caasi teleop start</h3>
+<pre class="syn"><code>caasi teleop start [CONFIG.yaml] [ARGS…] [--backend|-b CAPABILITY] [--device PATH]
+            [--name NAME] [--dry-run]</code></pre>
+<p>Two modes, decided by the first positional argument:</p>
+<ul>
+  <li><strong>Stack mode</strong> (no YAML): the backend is picked
+      <code>--backend</code> → the <code>catalog.teleop.default</code> setting → the first
+      installed of <code>keyboard</code>, <code>joy</code>, <code>xr</code> (in that order).
+      Launch-file stacks run through <code>ros2 launch &lt;package&gt; &lt;launch-file&gt;</code>
+      and <code>--device</code> becomes the launch argument <code>device:=&lt;path&gt;</code>; a
+      resolved script such as Isaac Sim's <code>isaac-sim.xr.vr.sh</code> runs directly, with
+      <code>--device</code> as its first positional argument.</li>
+  <li><strong>Experiment mode</strong>: when the first argument ends in
+      <code>.yaml</code>/<code>.yml</code>, that
+      <a href="simulation.html#experiment">experiment YAML</a> launches the robot's sim through
+      the normal experiment runner.</li>
+</ul>
+<p>Everything unrecognized is passed through to the stack or the experiment. The run is tracked
+with <code>kind: teleop</code> (backend <code>ros</code> for launch-file stacks, otherwise the
+resolved tool); <code>--name</code> overrides the run name, which defaults to the capability key
+or the experiment name.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi teleop start -b joy --device /dev/input/js0 --dry-run</span>
+<span class="out">Dry run — nothing was started:
+  command: /opt/ros/jazzy/bin/ros2 launch teleop_twist_joy teleop-launch.py device:=/dev/input/js0</span>
+<span class="in">caasi teleop start</span>
+<span class="ok">Teleop started: 20260907-210145-keyboard</span>
+<span class="dim">  Follow it with: caasi logs 20260907-210145-keyboard -f</span></span></code></pre>
+<p>On a machine where nothing is installed, the real failures are:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi teleop start -b keyboard --dry-run</span>
+<span class="err">Error: 'keyboard' is not available (teleop_twist_keyboard). Install it, or point Caasi at the renamed upstream with `caasi config set catalog.teleop.keyboard.packages [...]`.
+exit code: 1</span>
+<span class="in">caasi teleop start --dry-run</span>
+<span class="err">Error: No teleop capability is installed. Install it, or point Caasi at the renamed upstream with `caasi config set catalog.teleop.&lt;capability&gt;.&lt;field&gt; [...]`.
+exit code: 1</span></span></code></pre>
+
+<h3 id="teleop-record">caasi teleop record</h3>
+<pre class="syn"><code>caasi teleop record [--topics|-t TOPIC]… [--name NAME] [--dry-run] [-- EXTRA…]</code></pre>
+<p><code>ros2 bag record</code> into a dataset directory. <code>-t</code> is repeatable; with no
+topics everything is recorded (<code>-a</code>). Unrecognized arguments are appended to the
+<code>ros2 bag record</code> command. The <code>ros2</code> CLI is required — otherwise
+<code>Error: ros2 CLI not found; source a ROS 2 distro first.</code> (exit 1); when the current
+shell has not sourced a distro, the run's environment sources the detected one.</p>
+<p>The destination is <code>&lt;name-slug&gt;-&lt;YYYYmmdd-HHMMSS&gt;</code> under the usual
+datasets base (<code>--name</code> defaults to <code>teleop</code>), and
+<code>metadata.json</code> is written at launch — the bridge that makes a recording a
+first-class dataset for <a href="data.html#dataset-inspect"><code>dataset inspect</code></a>:</p>
+<pre><code>{
+  "name": "pick-place",
+  "created": "2026-09-07T21:05:12+08:00",
+  "kind": "teleop",
+  "topics": ["/cmd_vel", "/joint_states"],
+  "status": "recording",
+  "run_id": "20260907-210512-pick-place"
+}</code></pre>
+<p>The run is tracked with <code>kind: bag</code>, <code>backend: ros2</code> and
+<code>extra: {topics, dataset}</code>.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi teleop record --dry-run</span>
+<span class="out">Dry run — nothing was started:
+  command: /opt/ros/jazzy/bin/ros2 bag record -a -o /home/you/.caasi/datasets/teleop-20260907-204831
+  dest:    /home/you/.caasi/datasets/teleop-20260907-204831</span>
+<span class="in">caasi teleop record -t /cmd_vel -t /joint_states --name pick-place</span>
+<span class="ok">Recording demonstrations: /home/you/.caasi/datasets/pick-place-20260907-210512</span>
+<span class="dim">  Follow it with: caasi logs 20260907-210512-pick-place -f</span></span></code></pre>
+
+<h3 id="teleop-stop">caasi teleop stop</h3>
+<pre class="syn"><code>caasi teleop stop</code></pre>
+<p>Stops every running/paused run of kind <code>teleop</code> or <code>bag</code>, newest first —
+one line per run; a no-op when nothing is active. This is how a recording is closed out.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi teleop stop</span>
+<span class="ok">Stopped 20260907-210145-keyboard (teleop).
+Stopped 20260907-210512-pick-place (bag).</span>
+<span class="in">caasi teleop stop</span>
+<span class="dim">No active teleop or recording runs.</span></span></code></pre>
+
+<h3 id="teleop-replay">caasi teleop replay</h3>
+<pre class="syn"><code>caasi teleop replay BAG [--dry-run] [-- EXTRA…]</code></pre>
+<p>Publishes a recorded bag again with <code>ros2 bag play</code>, as a tracked run
+(<code>kind: replay</code>, <code>backend: ros2</code>). <code>BAG</code> is the path to a
+recorded bag directory — the dataset directory <code>teleop record</code> wrote works as-is,
+since <code>ros2 bag record -o</code> pointed at it. Unrecognized arguments are appended to
+<code>ros2 bag play</code>. Distinct from <a href="review.html#replay"><code>caasi
+replay</code></a>, which opens recorded run artifacts in a viewer.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi teleop replay datasets/pick-place-20260907-210512 --dry-run</span>
+<span class="out">Dry run — nothing was started:
+  command: /opt/ros/jazzy/bin/ros2 bag play datasets/pick-place-20260907-210512</span>
+<span class="in">caasi teleop replay /tmp/nonexistent-bag</span>
+<span class="err">Error: Bag '/tmp/nonexistent-bag' not found.
+exit code: 1</span></span></code></pre>
+
+<h2 id="workflow">Record → inspect → train → evaluate</h2>
+<p>The point of datasets being directories with a <code>metadata.json</code>: every producer
+writes to the same convention, so the consumers need no glue. The chain, in real commands:</p>
+<ol>
+  <li><strong>Produce.</strong> Demonstrations: <code>caasi teleop record</code>
+      (<a href="#teleop-record">above</a>). Synthetic frames: <code>caasi synth generate</code>
+      (<a href="#synth-generate">above</a>). Simulation-collected data:
+      <a href="data.html#dataset-generate"><code>caasi dataset generate</code></a>. Existing
+      data: <a href="#dataset-download"><code>caasi dataset download</code></a>.</li>
+  <li><strong>Inspect.</strong> <code>caasi teleop stop</code> closes the recording, then
+      <a href="data.html#dataset-inspect"><code>caasi dataset inspect latest</code></a> shows
+      metadata, on-disk contents and the linked run; <code>caasi synth preview latest</code>
+      (<a href="#synth-preview">above</a>) counts produced episodes for SDG sets. Gate with
+      <a href="data.html#dataset-validate"><code>caasi dataset validate</code></a> or
+      <code>caasi synth validate</code> (<a href="#synth-validate">above</a>).</li>
+  <li><strong>Train.</strong> <a href="simulation.html#lab"><code>caasi lab train</code></a>
+      for Isaac Lab experiments, or <a href="training.html#train"><code>caasi train</code></a>
+      for any experiment — both start tracked background runs.</li>
+  <li><strong>Evaluate.</strong>
+      <a href="simulation.html#lab"><code>caasi lab evaluate</code></a> runs the experiment's
+      <code>evaluate_script</code> against a checkpoint;
+      <a href="training.html#benchmark"><code>caasi benchmark start</code></a> measures sim
+      throughput. Review the recording itself with
+      <a href="#teleop-replay"><code>caasi teleop replay</code></a>, or run artifacts with
+      <a href="review.html#replay"><code>caasi replay</code></a>.</li>
+</ol>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi teleop record -t /cmd_vel -t /joint_states --name pick-place</span>
+<span class="ok">Recording demonstrations: /home/you/demo/datasets/pick-place-20260907-210512</span>
+<span class="dim">  Follow it with: caasi logs 20260907-210512-pick-place -f</span>
+<span class="dim"># …drive the robot, then close the recording…</span>
+<span class="in">caasi teleop stop</span>
+<span class="ok">Stopped 20260907-210512-pick-place (bag).</span>
+<span class="in">caasi dataset inspect latest</span>
+<span class="out">Dataset /home/you/demo/datasets/pick-place-20260907-210512
+  name: pick-place
+  created: 2026-09-07T21:05:12+08:00
+  kind: teleop
+  topics: ['/cmd_vel', '/joint_states']
+  status: recording
+  run_id: 20260907-210512-pick-place
+  Run: 20260907-210512-pick-place (stopped)</span>
+<span class="in">caasi lab train experiments/pick.yaml --steps 100000 --device cuda:0</span>
+<span class="ok">Run 20260907-212000-pick started in the background.</span>
+<span class="dim">  Follow it with: caasi logs 20260907-212000-pick -f</span>
+<span class="in">caasi lab evaluate experiments/pick.yaml --checkpoint runs/20260907-212000-pick/model_000100000.pt</span>
+<span class="ok">Run 20260907-224500-pick started in the background.</span>
+<span class="dim">  Follow it with: caasi logs 20260907-224500-pick -f</span></span></code></pre>
+<div class="callout tip">
+  <div class="c-title">Linked both ways</div>
+  <p>The dataset's <code>metadata.json</code> carries the <code>run_id</code>, and the run
+  manifest carries the dataset path — so <code>dataset inspect</code> shows the run's live
+  status, and <a href="runs.html#run"><code>caasi run list</code></a> shows what produced what
+  via the run <code>kind</code> (<code>dataset</code>, <code>bag</code>, <code>teleop</code>,
+  <code>replay</code>).</p>
+</div>
+
+<h2 id="dataset-download">caasi dataset download</h2>
+<pre class="syn"><code>caasi dataset download REF [--backend hf|ngc|url] [--name NAME] [--dry-run] [-- EXTRA…]</code></pre>
+<p>Downloads an existing dataset as a tracked run. The backend is auto-detected from the
+reference's scheme; <code>--backend</code> forces one. Each backend resolves to an upstream
+download tool and builds its command:</p>
+<table>
+  <thead><tr><th>Reference</th><th>Backend</th><th>Tool (in order)</th><th>Command built</th></tr></thead>
+  <tbody>
+    <tr><td><code>hf://org/name</code></td><td><code>hf</code></td><td><code>hf</code>, <code>huggingface-cli</code></td><td><code>hf download org/name [EXTRA…] --local-dir &lt;dataset-dir&gt;</code></td></tr>
+    <tr><td><code>ngc://org/name:version</code></td><td><code>ngc</code></td><td><code>ngc</code></td><td><code>ngc registry dataset download-version org/name:version [EXTRA…] --dest &lt;dataset-dir&gt;</code></td></tr>
+    <tr><td><code>http(s)://…/file</code></td><td><code>url</code></td><td><code>curl</code>, <code>wget</code></td><td><code class="wrap">curl -L [EXTRA…] -o &lt;dataset-dir&gt;/file &lt;url&gt;</code> (wget: <code class="wrap">wget [EXTRA…] -O …</code>)</td></tr>
+  </tbody>
+</table>
+<p>Failures are honest and early (both exit 1):</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi dataset download ftp://example.com/x</span>
+<span class="err">Error: Cannot detect a download backend for 'ftp://example.com/x' (use hf://, ngc://, http(s):// or --backend hf|ngc|url).</span>
+<span class="in">caasi dataset download hf://lerobot/aloha_sim</span>
+<span class="err">Error: No download tool found for backend 'hf'.</span></span></code></pre>
+<p>The dataset name is <code>--name</code>, or the last path segment of the source —
+<code>hf://lerobot/aloha_sim</code> becomes <code>aloha-sim-&lt;timestamp&gt;</code>. The run is
+tracked with <code>kind: dataset</code> and <code>backend</code> set to the detected download
+backend, and <code>metadata.json</code> is written at launch:</p>
+<pre><code>{
+  "name": "aloha-sim",
+  "created": "2026-09-07T21:00:00+08:00",
+  "source": "hf://lerobot/aloha_sim",
+  "backend": "hf",
+  "status": "downloading",
+  "run_id": "20260907-210000-aloha-sim"
+}</code></pre>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi dataset download hf://lerobot/aloha_sim --dry-run</span>
+<span class="out">Dry run — nothing was started:
+  command: hf download lerobot/aloha_sim --local-dir /home/you/.caasi/datasets/aloha-sim-20260907-205053
+  dest:    /home/you/.caasi/datasets/aloha-sim-20260907-205053</span>
+<span class="in">caasi dataset download https://example.com/data.tar.gz --dry-run</span>
+<span class="out">Dry run — nothing was started:
+  command: /usr/bin/curl -L -o /home/you/.caasi/datasets/data-tar-gz-20260907-205053/data.tar.gz https://example.com/data.tar.gz
+  dest:    /home/you/.caasi/datasets/data-tar-gz-20260907-205053</span>
+<span class="in">caasi dataset download hf://lerobot/aloha_sim</span>
+<span class="ok">Dataset download started: /home/you/.caasi/datasets/aloha-sim-20260907-210000</span>
+<span class="dim">  Run: 20260907-210000-aloha-sim — follow it with 'caasi logs 20260907-210000-aloha-sim -f'</span></span></code></pre>
+<p>Unrecognized flags pass straight through to the tool, between the source and the destination
+flags — <code>caasi dataset download hf://lerobot/aloha_sim --revision main</code> runs
+<code>hf download lerobot/aloha_sim --revision main --local-dir &lt;dataset-dir&gt;</code>.
+Dry runs need no tool installed and leave no directories behind.</p>
+<div class="callout note">
+  <div class="c-title">Cache behaviour</div>
+  <p>Caasi never sets or reads <code>HF_HOME</code> and keeps no download cache of its own — the
+  run's environment is not modified, so any cache location remains entirely the upstream tool's
+  business. Because Caasi always passes <code>--local-dir &lt;dataset-dir&gt;</code>, the
+  <code>hf</code> CLI materializes files directly into the dataset directory instead of its blob
+  cache; <code>ngc</code> receives <code>--dest</code>, and the URL backends write the single
+  file into it. Whether the tools exist at all is reported by
+  <code>caasi doctor --component data</code> (the <em>Hugging Face CLI</em> and
+  <em>NGC CLI</em> rows, <a href="#synth-status">above</a>).</p>
+</div>
+<p>Once the files land, the directory is an ordinary dataset:
+<a href="data.html#dataset-inspect"><code>dataset inspect</code></a>,
+<a href="data.html#dataset-convert"><code>dataset convert</code></a> and
+<a href="data.html#dataset-validate"><code>dataset validate</code></a> all work on it, and
+<a href="data.html#dataset"><code>dataset list</code></a> shows its <code>source</code> and
+<code>status</code>.</p>
+
+<div class="page-nav">
+  <a class="prev" href="accelerated.html"><span class="pn-label">Previous</span><span class="pn-title">← GPU-Accelerated Robotics</span></a>
+  <a class="next" href="platform.html"><span class="pn-label">Next</span><span class="pn-title">Physics & Foundation Models →</span></a>
+</div>
+
+<footer class="doc-footer">
+  Caasi CLI 0.2.0 — these pages live in <code>docs/</code> and need no build step.
+  Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
+</footer>
+</main>
+</div>
+<script src="assets/copy.js"></script>
+<script src="assets/sidebar.js"></script>
+</body>
+</html>

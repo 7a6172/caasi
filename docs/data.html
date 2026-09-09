@@ -10,7 +10,7 @@
 <body>
 <header class="topbar">
   <a class="brand" href="index.html">Caa<span>si</span></a>
-  <span class="badge">v0.1.0</span>
+  <span class="badge">v0.2.0</span>
   <span class="tagline">Data: dataset · sensor · vision</span>
   <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
 </header>
@@ -26,6 +26,22 @@ importing a single heavy library.
 </p>
 
 <h2 id="dataset">caasi dataset</h2>
+<table>
+  <thead><tr><th>Subcommand</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>list</code></td><td>List datasets under the datasets base directory.</td></tr>
+    <tr><td><code>generate</code></td><td>Generate a dataset from an experiment.</td></tr>
+    <tr><td><code>inspect</code></td><td>Inspect a dataset.</td></tr>
+    <tr><td><code>convert</code></td><td>Convert a dataset into a portable index (jsonl/csv).</td></tr>
+    <tr><td><code>validate</code></td><td>Validate a dataset.</td></tr>
+    <tr><td><code>download</code></td><td>Download a dataset (Hugging Face, NGC or URL) as a tracked run.</td></tr>
+  </tbody>
+</table>
+<p>Descriptions are the CLI's own — <code>caasi dataset --help</code> prints this list. For datasets
+<em>generated</em> by Isaac Sim Replicator see <a href="synthetic.html"><code>caasi synth</code></a>;
+for fetching existing ones see <a href="#dataset-download"><code>dataset download</code></a> below
+and its extended treatment in
+<a href="synthetic.html#dataset-download">synthetic.html</a>.</p>
 
 <h3 id="dataset-concept">What a dataset is</h3>
 <p>A dataset is a directory with a <code>metadata.json</code> plus any of the known data
@@ -53,6 +69,41 @@ Directory names follow <code>&lt;name-slug&gt;-&lt;YYYYmmdd-HHMMSS&gt;</code>.</
       (<code>caasi dataset inspect wave</code>).</li>
 </ul>
 <p>Unknown or ambiguous → <code>Error: No dataset matching '&lt;query&gt;'.</code> (exit 1).</p>
+
+<h3 id="dataset-list">caasi dataset list</h3>
+<pre class="syn"><code>caasi dataset list [--limit|-n N] [--json]</code></pre>
+<p>Every dataset under the base directory — the project's <code>datasets/</code> when you are inside
+a project, else <code>paths.datasets</code> — newest first. A directory counts only when it holds a
+<code>metadata.json</code>; <code>--limit</code> defaults to <code>20</code> (and
+<code>--limit 0</code> means “none”).</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi dataset list</span>
+<span class="out">Name                       Status       Files  Size
+wave-100-20260905-170412   generating   1301   81.3 KiB
+aloha-sim-20260905-180233  downloading  13     877 B</span>
+<span class="in">caasi dataset list --limit 1 --json | jq '.datasets[0]'</span>
+<span class="out">{
+  "name": "wave-100-20260905-170412",
+  "path": "/home/you/.caasi/datasets/wave-100-20260905-170412",
+  "status": "generating",
+  "source": null,
+  "files": 1301,
+  "size": 83269
+}</span></span></code></pre>
+<p><code>Status</code> and <code>source</code> come straight from <code>metadata.json</code>
+(<code>unknown</code> / <code>null</code> when absent), while <code>Files</code> and
+<code>Size</code> are counted on disk, recursively and including <code>metadata.json</code> — the
+same scan <code>inspect</code> reports. The JSON payload is
+<code>{"base": "&lt;datasets dir&gt;", "datasets": [{"name", "path", "status", "source", "files",
+"size"}]}</code>.</p>
+<p>An empty base directory is data, not an error — <code>No datasets found.</code> in yellow, exit
+<code>0</code> (<code>{"base": …, "datasets": []}</code> in JSON):</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi dataset list</span>
+<span class="warn">No datasets found.</span>
+<span class="in">caasi dataset list --json</span>
+<span class="out">{
+  "base": "/home/you/.caasi/datasets",
+  "datasets": []
+}</span></span></code></pre>
 
 <h3 id="dataset-generate">caasi dataset generate</h3>
 <pre class="syn"><code>caasi dataset generate CONFIG_PATH [--episodes N] [--workers N] [--record-images]
@@ -98,10 +149,9 @@ per subdirectory, total size):</p>
   record     images=True depth=False lidar=False
   status     generating
   Run: 20260905-170412-wave (succeeded)
-     Contents
-  Dir           Files
-  episodes      100
-  images        1200</span>
+Directory  Files
+episodes     100
+images      1200</span>
 <span class="in">caasi dataset inspect latest --json | jq '.run'</span>
 <span class="out">{ "id": "20260905-170412-wave", "status": "succeeded" }</span></span></code></pre>
 <p>JSON payload: <code>{"path", "metadata", "contents": {"files", "size", "dirs"}, "run"}</code>;
@@ -141,6 +191,57 @@ output <code>&lt;dataset&gt;/index.&lt;fmt&gt;</code>. Unknown format →
 <span class="err">exit code: 1</span></span></code></pre>
 <p>Exit <code>0</code> valid / <code>1</code> any issue — in both human and JSON mode.</p>
 
+<h3 id="dataset-download">caasi dataset download</h3>
+<pre class="syn"><code>caasi dataset download REF [--backend hf|ngc|url] [--name NAME] [--dry-run] [-- EXTRA…]</code></pre>
+<p>Fetches a dataset that already exists instead of generating one. The backend is auto-detected
+from the reference's scheme; <code>--backend</code> forces one (and then a bare
+<code>org/name</code> is accepted too). Caasi resolves an upstream downloader and delegates the
+whole transfer to it — no HTTP client, no SDK, nothing imported:</p>
+<table>
+  <thead><tr><th>Reference</th><th>Backend</th><th>Tool (first found on <code>PATH</code>)</th><th>Command built</th></tr></thead>
+  <tbody>
+    <tr><td><code>hf://org/name</code></td><td><code>hf</code></td><td><code>hf</code>, then <code>huggingface-cli</code></td><td><code class="wrap">&lt;tool&gt; download org/name [EXTRA…] --local-dir &lt;dataset-dir&gt;</code></td></tr>
+    <tr><td><code>ngc://org/name:version</code></td><td><code>ngc</code></td><td><code>ngc</code></td><td><code class="wrap">&lt;tool&gt; registry dataset download-version org/name:version [EXTRA…] --dest &lt;dataset-dir&gt;</code></td></tr>
+    <tr><td><code>http(s)://…/file</code></td><td><code>url</code></td><td><code>curl</code>, then <code>wget</code></td><td><code class="wrap">curl -L [EXTRA…] -o &lt;dataset-dir&gt;/file &lt;url&gt;</code> (<code>wget [EXTRA…] -O …</code>)</td></tr>
+  </tbody>
+</table>
+<p>The destination is a fresh dataset directory named <code>--name</code> or the source's last path
+segment, plus the usual timestamp suffix. The transfer starts as a detached run —
+<code>kind: dataset</code>, <code>backend</code> = the detected backend, <code>extra: {source,
+dataset}</code> in the manifest — and <code>metadata.json</code> is written at launch with
+<code>status: "downloading"</code> and the <code>run_id</code>, so
+<a href="runs.html"><code>caasi run status</code> and <code>caasi logs</code></a> follow it like any
+other run:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi dataset download hf://lerobot/aloha_sim --dry-run</span>
+<span class="out">Dry run — nothing was started:
+  command: hf download lerobot/aloha_sim --local-dir /home/you/.caasi/datasets/aloha-sim-20260905-180233
+  dest:    /home/you/.caasi/datasets/aloha-sim-20260905-180233</span>
+<span class="in">caasi dataset download https://example.com/data.tar.gz --dry-run</span>
+<span class="out">Dry run — nothing was started:
+  command: /usr/bin/curl -L -o /home/you/.caasi/datasets/data-tar-gz-20260905-180411/data.tar.gz https://example.com/data.tar.gz
+  dest:    /home/you/.caasi/datasets/data-tar-gz-20260905-180411</span>
+<span class="in">caasi dataset download https://example.com/data.tar.gz</span>
+<span class="ok">Dataset download started: /home/you/.caasi/datasets/data-tar-gz-20260905-180512</span>
+<span class="dim">  Run: 20260905-180512-data-tar-gz — follow it with 'caasi logs 20260905-180512-data-tar-gz -f'</span></span></code></pre>
+<p>Unrecognized flags pass straight through to the tool, between the source and the destination
+flags — <code>--revision main</code> yields
+<code>hf download lerobot/aloha_sim --revision main --local-dir &lt;dataset-dir&gt;</code>. A
+<code>--dry-run</code> needs no downloader installed (the command is printed with the backend's
+default tool name) and leaves no directory behind.</p>
+<p>Both refusals happen before anything is created, and both exit <code>1</code>:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="dim"># neither hf nor huggingface-cli on PATH</span>
+<span class="in">caasi dataset download hf://lerobot/aloha_sim</span>
+<span class="err">Error: No download tool found for backend 'hf'.</span>
+<span class="dim">exit code: 1</span>
+<span class="in">caasi dataset download ftp://example.com/x</span>
+<span class="err">Error: Cannot detect a download backend for 'ftp://example.com/x' (use hf://, ngc://, http(s):// or --backend hf|ngc|url).</span>
+<span class="dim">exit code: 1</span></span></code></pre>
+<p>Once the files land the directory is an ordinary dataset: <a href="#dataset-list"><code>dataset
+list</code></a> shows it with its <code>source</code> and <code>status</code>, and
+<code>inspect</code> / <code>convert</code> / <code>validate</code> all work on it. Cache behaviour
+and the Replicator-side workflow are covered in
+<a href="synthetic.html#dataset-download">synthetic.html</a>.</p>
+
 <h2 id="sensor">caasi sensor</h2>
 <p>Discovers sensors by scanning <code>/dev</code>, sysfs and pip metadata — vendor SDKs are
 never imported. Five sensors are known:</p>
@@ -158,12 +259,12 @@ never imported. Five sensors are known:</p>
 <h3 id="sensor-list">caasi sensor list</h3>
 <pre class="syn"><code>caasi sensor list [--json]</code></pre>
 <pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi sensor list</span>
-<span class="out">  Sensor     Kind          Status        Detail
-  cameras    video4linux   detected      1 device(s)
-  realsense  depth-camera  not detected  pyrealsense2 not installed
-  zed        depth-camera  not detected  ZED SDK not found
-  lidar      serial        not detected  0 serial device(s)
-  isaacsim   simulation    detected      Isaac Sim 6.0 at /opt/isaac-sim-6.0</span>
+<span class="out">Sensor     Kind          Status        Detail
+cameras    video4linux   detected      1 device(s)
+realsense  depth-camera  not detected  pyrealsense2 not installed
+zed        depth-camera  not detected  ZED SDK not found
+lidar      serial        not detected  0 serial device(s)
+isaacsim   simulation    detected      Isaac Sim 6.0 at /opt/isaac-sim-6.0</span>
 <span class="in">caasi sensor list --json | jq '.[0]'</span>
 <span class="out">{ "name": "cameras", "kind": "video4linux", "detected": true,
   "detail": "1 device(s)", "devices": ["/dev/video0 (Integrated Webcam)"],
@@ -205,14 +306,14 @@ mapped to its import module and candidate distributions:</p>
 <h3 id="vision-status">caasi vision status</h3>
 <pre class="syn"><code>caasi vision status [--json]</code></pre>
 <pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi vision status</span>
-<span class="out">  Component    Status     Version   Module
-  opencv       installed  4.10.0    cv2
-  open3d       installed  0.18.0    open3d
-  onnxruntime  installed  1.19.0    onnxruntime
-  tensorrt     missing    —         tensorrt
-  pytorch      installed  2.4.0     torch
-  pillow       installed  10.4.0    PIL
-  Install missing components with 'pip install &lt;package&gt;'.</span></span></code></pre>
+<span class="out">Component    Status     Version  Module
+opencv       installed  4.10.0   cv2
+open3d       installed  0.18.0   open3d
+onnxruntime  installed  1.19.0   onnxruntime
+tensorrt     missing    —        tensorrt
+pytorch      installed  2.4.0    torch
+pillow       installed  10.4.0   PIL
+Install missing components with 'pip install &lt;package&gt;'.</span></span></code></pre>
 <p>JSON: array of <code>{"name", "installed", "version", "module"}</code>. Always exits
 <code>0</code>.</p>
 
@@ -246,7 +347,7 @@ pillow: 10.4.0</span>
 </div>
 
 <footer class="doc-footer">
-  Caasi CLI 0.1.0 — these pages live in <code>docs/</code> and need no build step.
+  Caasi CLI 0.2.0 — these pages live in <code>docs/</code> and need no build step.
   Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
 </footer>
 </main>

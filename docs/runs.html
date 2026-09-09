@@ -10,7 +10,7 @@
 <body>
 <header class="topbar">
   <a class="brand" href="index.html">Caa<span>si</span></a>
-  <span class="badge">v0.1.0</span>
+  <span class="badge">v0.2.0</span>
   <span class="tagline">Runs: the process model behind every long-running command</span>
   <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
 </header>
@@ -113,11 +113,10 @@ timestamp-prefixed, sorting them sorts by time.</p>
   </tbody>
 </table>
 <pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi run list</span>
-<span class="out">                                    Runs
-  ID                      Name          Backend    Status     Created              PID
-  20260905-151207-ant     ant           lab        running    2026-09-05 15:12:07  51244
-  20260905-142301-wave    wave          sim        succeeded  2026-09-05 14:23:01  —
-  20260905-091544-nav2    nav2-bringup  ros        stopped    2026-09-05 09:15:44  —</span></span></code></pre>
+<span class="out">ID                    Name          Backend  Status     Created                    PID
+20260905-151207-ant   ant           lab      running    2026-09-05T15:12:07+08:00  51244
+20260905-142301-wave  wave          sim      succeeded  2026-09-05T14:23:01+08:00  —
+20260905-091544-nav2  nav2-bringup  ros      stopped    2026-09-05T09:15:44+08:00  —</span></span></code></pre>
 <p>Always exits <code>0</code>; an empty history prints <code>No runs recorded yet.</code></p>
 
 <h3 id="run-record-json">The run record (JSON shape)</h3>
@@ -220,6 +219,35 @@ command you will use most.</p>
 <code>--stream</code> value, or the log file does not exist. No <code>--json</code> — logs are
 already plain text.</p>
 
+<h3 id="run-attach">caasi run attach</h3>
+<pre class="syn"><code>caasi run attach QUERY</code></pre>
+<p>Attaches to a run's live output: both logs are read from the beginning and then followed
+together, each line tagged with its stream. Ctrl+C detaches — the run keeps going, as always.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi run attach ant</span>
+<span class="dim">Attached to run 20260905-151207-ant — Ctrl+C detaches, the run keeps going.</span>
+<span class="out">[stdout] Loading extension: omni.kit.viewport.window
+[stderr] [Warning] deprecated API used at frame 12
+[stdout] learning iteration 12/1500  mean reward 87.2</span>
+<span class="dim"># Ctrl+C</span>
+<span class="out">Detached from run 20260905-151207-ant; the run keeps going.</span>
+<span class="in">caasi run status ant --json | jq -r .status</span>
+<span class="out">running</span></span></code></pre>
+<table>
+  <thead><tr><th></th><th><code>caasi logs -f</code></th><th><code>caasi run attach</code></th></tr></thead>
+  <tbody>
+    <tr><td>Streams</td><td>one at a time — <code>--stream stdout|stderr</code></td><td>both, interleaved, each line prefixed <code>[stdout]</code> / <code>[stderr]</code></td></tr>
+    <tr><td>History</td><td>the last <code>--lines N</code> (default 50), then follows from the end of the file</td><td>everything from the start of both logs, then follows</td></tr>
+    <tr><td>Options</td><td><code>-n</code>, <code>-f</code>, <code>-s</code></td><td>none beyond <code>QUERY</code> — no <code>--json</code></td></tr>
+    <tr><td>Ctrl+C</td><td>stops following, silently</td><td>detaches and says so</td></tr>
+  </tbody>
+</table>
+<p>Like follow mode, attach returns on its own once the run reaches <code>succeeded</code>,
+<code>failed</code> or <code>stopped</code> — attaching to a finished run replays its logs and
+exits. Exit <code>1</code> for an unknown run or a run directory without log files
+(<code>Error: No log files found for this run.</code>). There is no top-level alias;
+<code>caasi view attach</code> is the unrelated <a href="review.html#view-attach">viewer</a>
+command.</p>
+
 <h3>Typical lifecycle</h3>
 <pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi sim run experiments/wave.yaml</span>
 <span class="ok">Run 20260905-142301-wave started in the background.</span>
@@ -237,7 +265,7 @@ Run 20260905-142301-wave deleted.</span></span></code></pre>
 </div>
 
 <footer class="doc-footer">
-  Caasi CLI 0.1.0 — these pages live in <code>docs/</code> and need no build step.
+  Caasi CLI 0.2.0 — these pages live in <code>docs/</code> and need no build step.
   Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
 </footer>
 </main>

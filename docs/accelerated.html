@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Isaac ROS &amp; Accelerated Groups — Caasi CLI Documentation</title>
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/theme.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html">Caa<span>si</span></a>
+  <span class="badge">v0.2.0</span>
+  <span class="tagline">Isaac ROS: perception · slam · mapping · motion · nitros · pipeline</span>
+  <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
+</header>
+<div class="layout">
+<aside id="sidebar"></aside>
+<main>
+
+<h1>Isaac ROS &amp; Accelerated Groups</h1>
+<p class="lead">
+Seven groups wrap the GPU-accelerated robotics stack — Isaac ROS, NITROS and the perception,
+SLAM, mapping and motion tools around them. None of them implements detection, SLAM or motion
+planning: each one reads a <strong>capability catalog</strong>, probes your machine with
+subprocesses, pip metadata and the filesystem, and delegates to the upstream <code>ros2</code>
+command that already exists — turning every long-lived launch into a
+<a href="runs.html">tracked run</a>.
+</p>
+
+<p>The seven groups and the catalog domains behind them:</p>
+<table>
+  <thead><tr><th>Group</th><th>Catalog domain</th><th>Commands</th><th>Delegates to</th></tr></thead>
+  <tbody>
+    <tr><td><a href="#isaac-ros"><code>isaac-ros</code></a></td><td><code>isaacros</code></td><td><code>status</code> · <code>list</code> · <code>doctor</code> · <code>launch</code></td><td>the whole Isaac ROS catalog, plus raw <code>ros2 launch &lt;pkg&gt; &lt;file&gt;</code></td></tr>
+    <tr><td><a href="#perception"><code>perception</code></a></td><td><code>perception</code></td><td><code>status</code> · <code>camera</code> · <code>pose</code> · <code>detect</code> · <code>segment</code> · <code>inspect</code></td><td><code>/dev/video*</code>, <code>ros2 topic hz|echo</code>, <code>ros2 node info</code>, Isaac ROS launch files</td></tr>
+    <tr><td><a href="#slam"><code>slam</code></a></td><td><code>slam</code></td><td><code>status</code> · <code>launch</code> · <code>test</code> · <code>benchmark</code></td><td><code>isaac_ros_visual_slam</code>, <code>slam_toolbox</code>, <code>cartographer_ros</code></td></tr>
+    <tr><td><a href="#mapping"><code>mapping</code></a></td><td><code>mapping</code></td><td><code>status</code> · <code>run</code> · <code>inspect</code></td><td><code>isaac_ros_nvblox</code>, <code>slam_toolbox</code>, <code>nav2_map_server</code>, saved map YAML</td></tr>
+    <tr><td><a href="#motion"><code>motion</code></a></td><td><code>motion</code></td><td><code>status</code> · <code>serve</code> · <code>plan</code> · <code>execute</code> · <code>benchmark</code></td><td><code>isaac_ros_cumotion</code>, MoveIt 2 planner packages, <code>ros2 action send_goal</code></td></tr>
+    <tr><td><a href="#nitros"><code>nitros</code></a></td><td><code>nitros</code></td><td><code>status</code> · <code>doctor</code></td><td><code>isaac_ros_nitros*</code>, CUDA/TensorRT, <code>ROS_DISABLE_NITROS</code></td></tr>
+    <tr><td><a href="#pipeline"><code>pipeline</code></a></td><td>—</td><td><code>inspect</code></td><td>the live graph: <code>ros2 node list</code>, <code>ros2 node info</code>, <code>ros2 topic info -v</code></td></tr>
+  </tbody>
+</table>
+
+<p>In one line — which command answers which question:</p>
+<table>
+  <thead><tr><th>You want…</th><th>Use</th></tr></thead>
+  <tbody>
+    <tr><td>“what accelerated stack can I use here?”</td><td><code>isaac-ros status</code> · <code>isaac-ros list</code> · <code>&lt;group&gt; status</code></td></tr>
+    <tr><td>“start the accelerated thing”</td><td><code>slam launch</code> · <code>mapping run</code> · <code>motion serve</code> · <code>perception detect</code> · <code>isaac-ros launch</code> → all become tracked runs</td></tr>
+    <tr><td>“is it actually working?” (scriptable)</td><td><code>slam test</code> · <code>isaac-ros doctor</code> · <code>nitros doctor</code> · <code>caasi doctor --component accelerated</code></td></tr>
+    <tr><td>“where does my graph lose the GPU?”</td><td><code>pipeline inspect</code> · <code>perception inspect</code> · <code>nitros doctor</code></td></tr>
+    <tr><td>“upstream renamed a package”</td><td><code>caasi config set catalog.&lt;domain&gt;.&lt;capability&gt;.&lt;field&gt; […]</code> — <a href="#firewall">no code change</a></td></tr>
+  </tbody>
+</table>
+
+<h2 id="isaac-ros">caasi isaac-ros</h2>
+<p>The umbrella group: it lists the entire Isaac ROS catalog, tells you which parts are installed
+and which are running, checks the GPU prerequisites, and launches any package/launch-file pair
+you name as a tracked run.</p>
+
+<h3 id="shape">The shape every group shares</h3>
+<p>Six of the seven groups are generated from the catalog by one factory; which commands a group
+has is itself catalog data — the domain's <code>verbs</code>:</p>
+<pre class="syn"><code>caasi &lt;group&gt; status [--json]
+caasi &lt;group&gt; list [--json]                    # only where the domain declares "list"
+caasi &lt;group&gt; doctor [--verbose] [--json]      # only where the domain declares "doctor"
+caasi &lt;group&gt; launch|run|serve [--backend|-b CAP] [--name NAME] [--dry-run] [--json] [-- ARGS…]</code></pre>
+<ul>
+  <li><code>status</code> is always generated.</li>
+  <li><code>list</code> exists only for <code>isaac-ros</code> — it is the catalog browser.</li>
+  <li><code>doctor</code> exists only for <code>isaac-ros</code> and <code>nitros</code>.</li>
+  <li>the <strong>run verb</strong> is the first of <code>launch</code> / <code>run</code> /
+      <code>serve</code> the domain declares: <code>slam launch</code>,
+      <code>mapping run</code>, <code>motion serve</code>. <code>isaac-ros launch</code> is the
+      exception — it takes a package and a launch file instead of a <code>--backend</code>.
+      <code>perception</code> and <code>nitros</code> declare no run verb at all.</li>
+</ul>
+<p>Everything a run verb accepts is the same four options plus pass-through:</p>
+<table>
+  <thead><tr><th>Parameter</th><th>Kind</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>--backend</code></td><td>option (<code>-b</code>)</td><td>str</td><td>see below</td><td>Which catalog capability to start (<code>caasi config catalog &lt;domain&gt;</code> lists them).</td></tr>
+    <tr><td><code>--name</code></td><td>option</td><td>str</td><td>capability key</td><td>Name of the tracked run.</td></tr>
+    <tr><td><code>--dry-run</code></td><td>option</td><td>flag</td><td>off</td><td>Print the command without starting it.</td></tr>
+    <tr><td><code>--json</code></td><td>option</td><td>flag</td><td>off</td><td>Print the run record instead of the human summary.</td></tr>
+    <tr><td>trailing args</td><td>pass-through</td><td></td><td></td><td>Appended verbatim to the <code>ros2</code> command line (e.g. <code>use_sim_time:=true</code>).</td></tr>
+  </tbody>
+</table>
+
+<h4>How a capability is chosen</h4>
+<ol>
+  <li><code>--backend &lt;capability&gt;</code> when you pass it;</li>
+  <li>otherwise <code>catalog.&lt;domain&gt;.default</code> from your
+      <a href="configuration.html">configuration</a>, if that capability is installed;</li>
+  <li>otherwise the first <em>installed</em> capability, in catalog order.</li>
+</ol>
+<p>Each of the three ways can fail honestly, and each failure names the config key that would
+fix it:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi slam launch -b nope</span>
+<span class="err">Error: Unknown slam capability 'nope'. Known: visual, toolbox, cartographer</span>
+<span class="in">caasi slam launch -b visual --dry-run</span>
+<span class="err">Error: 'visual' is not available (isaac_ros_visual_slam). Install it, or point Caasi at the renamed upstream with `caasi config set catalog.slam.visual.packages [...]`.</span>
+<span class="in">caasi slam launch --dry-run</span>
+<span class="err">Error: No slam capability is installed. Install it, or point Caasi at the renamed upstream with `caasi config set catalog.slam.&lt;capability&gt;.&lt;field&gt; [...]`.</span>
+<span class="dim"># all three exit 1 — the same three messages appear for `mapping run` and `motion serve`</span></span></code></pre>
+
+<h4>How a capability is detected</h4>
+<p>One probe chain, first hit wins, and the hit is reported as <code>how</code> /
+<code>value</code>: ROS <strong>package</strong> (<code>ros2 pkg prefix</code>) →
+<strong>binary</strong> (on <code>PATH</code>) → <strong>module</strong> (pip metadata) →
+<strong>env</strong> variable → filesystem <strong>path</strong> glob. Caasi never imports the
+ecosystem it detects.</p>
+
+<h4>Everything launched becomes a tracked run</h4>
+<p>A run verb starts the resolved command detached and logged, exactly like
+<code>caasi run</code>: the record carries <code>backend: ros</code>
+(<code>script</code> for benchmark scripts), a <code>kind</code> of <code>isaacros</code>,
+<code>slam</code>, <code>mapping</code>, <code>motion</code>, <code>perception</code> or
+<code>benchmark</code>, and the extra fields <code>domain</code> and <code>capability</code> —
+see <a href="runs.html">Runs &amp; Logs</a>. If your shell is not sourced, the run gets the
+environment produced by sourcing <code>/opt/ros/&lt;distro&gt;/setup.bash</code>; if it is
+already sourced, nothing is added.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi slam launch -b visual use_sim_time:=true</span>
+<span class="ok">Started run 20260907-101502-visual.</span>
+<span class="dim">  Follow it with: caasi logs 20260907-101502-visual -f</span>
+<span class="in">caasi slam launch -b visual --dry-run</span>
+<span class="out">Dry run — nothing was launched:
+  command: /opt/ros/jazzy/bin/ros2 launch isaac_ros_visual_slam visual_slam.launch.py use_sim_time:=true</span></span></code></pre>
+
+<h3 id="catalog-data">The catalog, as data</h3>
+<p><code>isaac-ros list</code> is the ten-row <code>isaacros</code> domain; the
+<code>Group</code> column says which Caasi group wraps each capability. This is the table the
+rest of the page expands:</p>
+<table>
+  <thead><tr><th>Capability</th><th>Upstream package(s)</th><th>Launch file</th><th>Caasi group</th></tr></thead>
+  <tbody>
+    <tr><td><code>nitros</code></td><td><code>isaac_ros_nitros</code></td><td>—</td><td><code>nitros</code></td></tr>
+    <tr><td><code>slam</code></td><td><code>isaac_ros_visual_slam</code></td><td><code>visual_slam.launch.py</code></td><td><code>slam</code></td></tr>
+    <tr><td><code>mapping</code></td><td><code>isaac_ros_nvblox</code></td><td><code>nvblox.launch.py</code></td><td><code>mapping</code></td></tr>
+    <tr><td><code>motion</code></td><td><code>isaac_ros_cumotion</code></td><td><code>isaac_ros_cumotion.launch.py</code></td><td><code>motion</code></td></tr>
+    <tr><td><code>detection</code></td><td><code>isaac_ros_object_detection</code></td><td><code>object_detection.launch.py</code></td><td><code>perception</code></td></tr>
+    <tr><td><code>segmentation</code></td><td><code>isaac_ros_image_segmentation</code></td><td><code>image_segmentation.launch.py</code></td><td><code>perception</code></td></tr>
+    <tr><td><code>depth</code></td><td><code>isaac_ros_depth_estimation</code>, <code>isaac_ros_disparity_filters</code></td><td>—</td><td><code>perception</code></td></tr>
+    <tr><td><code>apriltag</code></td><td><code>isaac_ros_apriltag</code></td><td><code>apriltag.launch.py</code></td><td><code>perception</code></td></tr>
+    <tr><td><code>image_pipeline</code></td><td><code>isaac_ros_image_pipeline</code></td><td>—</td><td><code>perception</code></td></tr>
+    <tr><td><code>tensor_rt</code></td><td><code>isaac_ros_tensor_rt</code></td><td>—</td><td>—</td></tr>
+  </tbody>
+</table>
+<p>The first four rows are marked <code>core</code> in the catalog: <code>status</code> reports
+them as <code>missing</code> (and <code>doctor</code> as a failure) when they are absent, while
+optional capabilities are reported as <code>absent</code> (a skip).</p>
+
+<h3 id="firewall">The version-churn firewall</h3>
+<p>Isaac ROS renames packages between releases (<code>isaac_ros_visual_slam</code> →
+<code>…_v4</code>, split inference packages, moved launch files). Caasi absorbs that in config,
+never in code: <strong>every</strong> field of every capability is overridable under
+<code>catalog:</code>, and the override rule is deliberately the only one —
+<code>catalog.&lt;domain&gt;.&lt;capability&gt;.&lt;field&gt;</code> <em>replaces</em> that field
+wholesale (lists are not appended to). An override may also add a capability, or a whole domain,
+that the built-ins do not know about.</p>
+<pre class="syn"><code>caasi config set catalog.&lt;domain&gt;.&lt;capability&gt;.&lt;field&gt; &lt;value&gt;
+caasi config catalog [DOMAIN] [--json]</code></pre>
+<p>Overridable fields: <code>packages</code>, <code>binaries</code>, <code>modules</code>,
+<code>env</code>, <code>paths</code>, <code>topics</code> (lists), <code>launch</code> (a
+<code>[package, file]</code> pair), <code>script</code>, <code>label</code>, <code>group</code>,
+<code>tool</code>, <code>core</code>. <code>default</code> is reserved: it is the domain setting
+that picks the capability when you omit <code>--backend</code>.</p>
+<pre class="term"><code><span class="t-head">shell — upstream renamed visual SLAM to v4</span><span class="t-body"><span class="in">caasi config set catalog.slam.visual.packages "[isaac_ros_visual_slam_v4]"</span>
+<span class="out">Set catalog.slam.visual.packages = ['isaac_ros_visual_slam_v4'] (saved to /home/you/.config/caasi/config.yaml)</span>
+<span class="in">caasi config set catalog.slam.visual.launch "[isaac_ros_visual_slam_v4, visual_slam.launch.py]"</span>
+<span class="out">Set catalog.slam.visual.launch = ['isaac_ros_visual_slam_v4', 'visual_slam.launch.py'] (saved to /home/you/.config/caasi/config.yaml)</span>
+<span class="in">caasi config set catalog.slam.default visual</span>
+<span class="out">Set catalog.slam.default = visual (saved to /home/you/.config/caasi/config.yaml)</span>
+<span class="in">caasi slam launch --dry-run</span>
+<span class="out">Dry run — nothing was launched:
+  command: /opt/ros/jazzy/bin/ros2 launch isaac_ros_visual_slam_v4 visual_slam.launch.py</span></span></code></pre>
+<p><code>caasi config catalog</code> prints the <em>effective</em> catalog — built-ins merged
+with your overrides — so you can see what Caasi will actually probe:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi config catalog slam</span>
+<span class="out">SLAM slam · ros
+capability    upstream targets       launch file                     caasi group
+visual        isaac_ros_visual_slam  isaac_ros_visual_slam           —
+                                     visual_slam.launch.py
+toolbox       slam_toolbox           slam_toolbox                    —
+                                     online_async_launch.py
+cartographer  cartographer_ros       cartographer_ros                —
+                                     cartographer.launch.py
+
+Every field is overridable: `caasi config set catalog.&lt;domain&gt;.&lt;capability&gt;.&lt;field&gt; &lt;value&gt;`</span>
+<span class="in">caasi config catalog nope</span>
+<span class="err">Error: Unknown catalog domain: nope. Known domains: isaacros, perception, slam, mapping, motion, nitros, physics, warp, groot, cosmos, usd, data, teleop, sdg</span></span></code></pre>
+<div class="callout note">
+  <div class="c-title">Two domains, one upstream package</div>
+  <p>The <code>isaacros</code> domain and the functional domains overlap on purpose:
+  <code>catalog.isaacros.detection</code> and <code>catalog.perception.detection</code> both
+  name <code>isaac_ros_object_detection</code>. <code>caasi perception status</code> probes the
+  <code>perception</code> domain, while <code>caasi perception detect</code> launches the
+  <code>isaacros</code> capability — so a rename that affects launching is fixed with
+  <code>caasi config set catalog.isaacros.detection.packages […]</code>.</p>
+</div>
+
+<h3 id="isaac-ros-status">caasi isaac-ros status</h3>
+<pre class="syn"><code>caasi isaac-ros status [--json]</code></pre>
+<p>One screen for the whole catalog: the workspace (<code>ISAAC_ROS_WS</code> → the
+<code>tools.isaacros</code> registry → <code>~/workspaces/isaac_ros</code> →
+<code>~/isaac_ros</code>), the distro, and one row per capability. Never fails — “not installed”
+is data.</p>
+<pre class="term"><code><span class="t-head">shell — a machine with Isaac ROS built from source</span><span class="t-body"><span class="in">caasi isaac-ros status</span>
+<span class="out">Isaac ROS
+  ROS distro     jazzy
+  Sourced        yes
+  Workspace      /home/you/workspaces/isaac_ros
+Capability      State      Detail
+nitros          installed  /home/you/workspaces/isaac_ros/install/isaac_ros_nitros
+slam            running    /home/you/workspaces/isaac_ros/install/isaac_ros_visual_slam
+mapping         installed  /home/you/workspaces/isaac_ros/install/isaac_ros_nvblox
+motion          installed  /home/you/workspaces/isaac_ros/install/isaac_ros_cumotion
+detection       installed  /home/you/workspaces/isaac_ros/install/isaac_ros_object_detection
+segmentation    absent     not installed
+depth           absent     not installed
+apriltag        installed  /home/you/workspaces/isaac_ros/install/isaac_ros_apriltag
+image_pipeline  absent     not installed
+tensor_rt       installed  /home/you/workspaces/isaac_ros/install/isaac_ros_tensor_rt
+6 of 10 capabilities installed.</span></span></code></pre>
+<p>The <code>State</code> column is computed, in this order: <code>running</code> (live nodes
+belong to the capability) · <code>installed</code> (a probe hit) · <code>missing</code> (a
+<code>core</code> capability with no hit) · <code>absent</code> (an optional capability with no
+hit). <code>Detail</code> is the probe value — install prefix, binary path, version, environment
+value or matched path — or <code>not installed</code>. The last line is
+“<code>N of M capabilities installed.</code>”.</p>
+<p>On a machine with plain ROS 2 and no Isaac ROS, the same command is honest about it:</p>
+<pre class="term"><code><span class="t-head">shell — ROS 2 jazzy, no Isaac ROS packages</span><span class="t-body"><span class="in">caasi isaac-ros status</span>
+<span class="out">Isaac ROS
+  ROS distro     jazzy
+  Sourced        yes
+Capability      State    Detail
+nitros          missing  not installed
+slam            missing  not installed
+mapping         missing  not installed
+motion          missing  not installed
+detection       absent   not installed
+segmentation    absent   not installed
+depth           absent   not installed
+apriltag        absent   not installed
+image_pipeline  absent   not installed
+tensor_rt       absent   not installed
+0 of 10 capabilities installed.</span></span></code></pre>
+<p>JSON payload — the adapter's keys, then the group's own:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi isaac-ros status --json</span>
+<span class="out">{
+  "domain": "isaacros",
+  "kind": "ros",
+  "tool": null,
+  "root": null,
+  "total": 10,
+  "installed": 0,
+  "capabilities": [
+    {
+      "key": "slam",
+      "label": "catalog.isaacros.slam",
+      "group": "slam",
+      "core": true,
+      "found": false,
+      "how": null,
+      "value": null,
+      "launch": ["isaac_ros_visual_slam", "visual_slam.launch.py"],
+      "script": null,
+      "nodes": []
+    }
+  ],</span>
+<span class="dim">  … one object per capability, in catalog order …</span>
+<span class="out">  "ros_distro": "jazzy",
+  "ros_root": "/opt/ros/jazzy",
+  "ros_sourced": true,
+  "running": [],
+  "workspace": null
+}</span></span></code></pre>
+<p><code>running</code> lists the capability keys that have live nodes; each capability object
+also carries those <code>nodes</code>. <code>how</code> is
+<code>"package"</code>/<code>"binary"</code>/<code>"module"</code>/<code>"env"</code>/<code>"path"</code>
+(or <code>null</code>), <code>label</code> is the message key Caasi renders for the capability,
+and <code>root</code>/<code>tool</code>/<code>launcher</code> appear for domains tied to a tool
+(<code>perception</code>), while <code>ros_distro</code>/<code>ros_root</code>/<code>ros_sourced</code>
+appear for ROS domains.</p>
+
+<h3 id="isaac-ros-list">caasi isaac-ros list</h3>
+<pre class="syn"><code>caasi isaac-ros list [--json]</code></pre>
+<p>The catalog itself, probed: which capability is installed, where, and which group wraps it.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi isaac-ros list</span>
+<span class="out">Capability  Packages                    Installed  Prefix                                             Group
+nitros      isaac_ros_nitros            ✓          /home/you/workspaces/isaac_ros/install/isaac_ros…  nitros
+slam        isaac_ros_visual_slam       ✓          /home/you/workspaces/isaac_ros/install/isaac_ros…  slam
+mapping     isaac_ros_nvblox            ✓          /home/you/workspaces/isaac_ros/install/isaac_ros…  mapping
+motion      isaac_ros_cumotion          ✓          /home/you/workspaces/isaac_ros/install/isaac_ros…  motion
+detection   isaac_ros_object_detection  ✓          /home/you/workspaces/isaac_ros/install/isaac_ros…  perception
+…
+  Override any field: caasi config set catalog.isaacros.&lt;capability&gt;.&lt;field&gt; &lt;value&gt;</span>
+<span class="in">caasi isaac-ros list --json | jq '.capabilities[1]'</span>
+<span class="out">{
+  "capability": "slam",
+  "packages": ["isaac_ros_visual_slam"],
+  "installed": true,
+  "prefix": "/home/you/workspaces/isaac_ros/install/isaac_ros_visual_slam",
+  "group": "slam",
+  "launch": ["isaac_ros_visual_slam", "visual_slam.launch.py"]
+}</span></span></code></pre>
+<p><code>Installed</code> is <code>✓</code> or <code>•</code>; <code>Prefix</code> and
+<code>Group</code> print <code>—</code> when empty. JSON is
+<code>{"domain", "capabilities": [{"capability", "packages", "installed", "prefix", "group", "launch"}]}</code>.
+Always exits <code>0</code>.</p>
+
+<h3 id="isaac-ros-doctor">caasi isaac-ros doctor</h3>
+<pre class="syn"><code>caasi isaac-ros doctor [--verbose] [--json]
+caasi doctor --component accelerated</code></pre>
+<p>The group's <code>doctor</code> runs four check sections — <code>ros</code>,
+<code>accelerated</code>, <code>nvidia</code>, <code>graphics</code> — and exits <code>1</code>
+if any check failed. Hints are printed for failures and warnings; <code>--verbose</code> also
+shows hints for passing checks.</p>
+<p>The <code>accelerated</code> section is the one worth knowing: it walks the
+<code>isaacros</code>, <code>nitros</code> and <code>motion</code> domains (de-duplicated by
+upstream target, since <code>isaacros</code> lists the same packages), then adds the NITROS
+prerequisites — CUDA, TensorRT, <code>RMW_IMPLEMENTATION</code>, <code>ROS_DOMAIN_ID</code>. The
+same section is available from the global doctor:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi doctor --component accelerated</span>
+<span class="out">Environment Diagnostics
+
+GPU-Accelerated Robotics</span>
+<span class="err">  ✗ NITROS transport — not found (isaac_ros_nitros)
+      ↳ Install it, or point Caasi at the renamed upstream with `caasi config set catalog.isaacros.nitros.packages [...]`.
+  ✗ Visual SLAM — not found (isaac_ros_visual_slam)
+      ↳ Install it, or point Caasi at the renamed upstream with `caasi config set catalog.isaacros.slam.packages [...]`.
+  ✗ nvblox mapping — not found (isaac_ros_nvblox)
+  ✗ cuMotion — not found (isaac_ros_cumotion)</span>
+<span class="dim">  • Object detection — not found (isaac_ros_object_detection)
+  • Image segmentation — not found (isaac_ros_image_segmentation)
+  • Depth estimation — not found (isaac_ros_depth_estimation, isaac_ros_disparity_filters)
+  • AprilTag detection — not found (isaac_ros_apriltag)
+  • Image pipeline — not found (isaac_ros_image_pipeline)
+  • TensorRT inference — not found (isaac_ros_tensor_rt)
+  • NITROS type interfaces — not found (isaac_ros_nitros_type_interfaces)
+  • NITROS bridge — not found (isaac_ros_nitros_bridge)
+  • ROS_DISABLE_NITROS — not found (ROS_DISABLE_NITROS)
+  • cuRobo — not found (curobo, nvidia-curobo)</span>
+<span class="err">  ✗ MoveIt 2 — not found (moveit_core, moveit_ros_planning)
+  ✗ OMPL — not found (moveit_planners_ompl)</span>
+<span class="dim">  • Pilz — not found (pilz_industrial_motion_planner)
+  • STOMP — not found (moveit_planners_stomp)
+  • CHOMP — not found (moveit_planners_chomp)</span>
+<span class="ok">  ✓ CUDA (driver) — 13.0</span>
+<span class="warn">  ! TensorRT (python) — no tensorrt distribution found
+      ↳ Isaac ROS inference nodes need TensorRT; install it or use the Isaac ROS container.</span>
+<span class="dim">  • RMW_IMPLEMENTATION — not set (ROS 2 default)
+  • ROS_DOMAIN_ID — not set (domain 0)</span>
+<span class="err">✘ 6 issue(s) found, 1 warning(s). Run with --verbose for hints.</span>
+<span class="err">exit code: 1</span></span></code></pre>
+<p>When the <code>ros2</code> CLI itself is missing, the whole section degrades to a single skip
+row: <code>• Isaac ROS — skipped (ROS 2 CLI unavailable)</code> with the hint
+<code>Install ROS 2 to enable Nav2 / MoveIt 2 / ros2_control checks.</code></p>
+<p>JSON mode is the same list of checks plus an explicit exit code:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi isaac-ros doctor --json | jq '.sections, .checks[0], .exit_code'</span>
+<span class="out">["ros", "accelerated", "nvidia", "graphics"]
+{
+  "section": "accelerated",
+  "name": "NITROS transport",
+  "status": "fail",
+  "detail": "not found (isaac_ros_nitros)",
+  "hint": "Install it, or point Caasi at the renamed upstream with `caasi config set catalog.isaacros.nitros.packages [...]`."
+}
+1</span></span></code></pre>
+<p>Group <code>doctor</code> JSON adds <code>domain</code> and <code>sections</code> to
+<code>{"checks": [{"section", "name", "status", "detail", "hint"}], "exit_code"}</code>;
+<code>status</code> is one of <code>ok</code>, <code>warn</code>, <code>fail</code>,
+<code>skip</code> (rendered <code>✓</code> <code>!</code> <code>✗</code> <code>•</code>).</p>
+
+<h3 id="isaac-ros-launch">caasi isaac-ros launch</h3>
+<pre class="syn"><code>caasi isaac-ros launch PACKAGE LAUNCH_FILE [--name NAME] [--dry-run] [--json] [-- LAUNCH_ARGS…]</code></pre>
+<table>
+  <thead><tr><th>Parameter</th><th>Kind</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>PACKAGE</code></td><td>argument</td><td>str</td><td>required</td><td>ROS package that owns the launch file.</td></tr>
+    <tr><td><code>LAUNCH_FILE</code></td><td>argument</td><td>str</td><td>required</td><td>Launch file inside that package.</td></tr>
+    <tr><td><code>--name</code></td><td>option</td><td>str</td><td>launch file name</td><td>Name of the tracked run.</td></tr>
+    <tr><td><code>--dry-run</code></td><td>option</td><td>flag</td><td>off</td><td>Print the command without starting it.</td></tr>
+    <tr><td><code>--json</code></td><td>option</td><td>flag</td><td>off</td><td>Print the run record.</td></tr>
+    <tr><td>trailing args</td><td>pass-through</td><td></td><td></td><td>Appended verbatim as launch arguments.</td></tr>
+  </tbody>
+</table>
+<p>This is the escape hatch for anything the catalog does not name: the two arguments go straight
+into <code>ros2 launch</code>, so no install check happens up front — if the package is missing,
+the run fails and <code>caasi logs</code> shows the <code>ros2</code> error. The record carries
+<code>kind: isaacros</code> with <code>package</code> and <code>launch</code> as extra fields.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi isaac-ros launch isaac_ros_visual_slam visual_slam.launch.py --dry-run</span>
+<span class="out">Dry run — nothing was launched:
+  command: /opt/ros/jazzy/bin/ros2 launch isaac_ros_visual_slam visual_slam.launch.py</span>
+<span class="in">caasi isaac-ros launch isaac_ros_nvblox nvblox.launch.py --name nvblox use_sim_time:=true</span>
+<span class="ok">Started run 20260907-102214-nvblox.</span>
+<span class="dim">  Follow it with: caasi logs 20260907-102214-nvblox -f</span>
+<span class="in">caasi run stop nvblox</span></span></code></pre>
+
+<h2 id="perception">caasi perception</h2>
+<p>Cameras from <code>/dev</code>, image topics and rates from <code>ros2</code>, GPU detection
+and segmentation from the Isaac ROS launch files, node interfaces from <code>ros2 node info</code>.
+The domain is <code>mixed</code> and tied to the <code>isaacsim</code> tool, so its
+<code>status</code> reports a launcher instead of distro rows.</p>
+
+<h3 id="perception-catalog">Capabilities</h3>
+<table>
+  <thead><tr><th>Capability</th><th>Probed via</th><th>Caasi verb</th></tr></thead>
+  <tbody>
+    <tr><td><code>camera</code> <span class="pill">core</span></td><td>path glob <code>/dev/video*</code></td><td><code>perception camera</code></td></tr>
+    <tr><td><code>detection</code> <span class="pill">core</span></td><td><code>isaac_ros_object_detection</code></td><td><code>perception detect</code> → <code>object_detection.launch.py</code></td></tr>
+    <tr><td><code>segmentation</code></td><td><code>isaac_ros_image_segmentation</code></td><td><code>perception segment</code> → <code>image_segmentation.launch.py</code></td></tr>
+    <tr><td><code>depth</code></td><td><code>isaac_ros_depth_estimation</code>, <code>isaac_ros_disparity_filters</code></td><td>reported by <code>status</code>; launch with <code>isaac-ros launch</code></td></tr>
+    <tr><td><code>pose</code></td><td><code>isaac_ros_apriltag</code>, <code>foundationalpose</code>; topics <code>/tf</code>, <code>/apriltag/detections</code></td><td><code>perception pose</code> (echoes <code>/apriltag/detections</code> by default)</td></tr>
+  </tbody>
+</table>
+
+<h3 id="perception-status">caasi perception status</h3>
+<pre class="syn"><code>caasi perception status [--json]</code></pre>
+<pre class="term"><code><span class="t-head">shell — Isaac Sim registered, no Isaac ROS</span><span class="t-body"><span class="in">caasi perception status</span>
+<span class="out">Perception
+  Root           /opt/isaac-sim-6.0
+  Launcher       /opt/isaac-sim-6.0/python.sh
+Capability    State      Detail
+camera        installed  /dev/video0
+detection     missing    not installed
+segmentation  absent     not installed
+depth         absent     not installed
+pose          absent     not installed
+1 of 5 capabilities installed.</span>
+<span class="in">caasi perception status --json | jq '{kind, tool, launcher, running}'</span>
+<span class="out">{ "kind": "mixed", "tool": "isaacsim",
+  "launcher": "/opt/isaac-sim-6.0/python.sh", "running": [] }</span></span></code></pre>
+<p>The <code>camera</code> capability is a path probe, so it is “installed” as soon as a video
+device exists — it says nothing about Isaac ROS.</p>
+
+<h3 id="perception-camera">caasi perception camera</h3>
+<pre class="syn"><code>caasi perception camera [--hz TOPIC] [--duration 5.0] [--window 10] [--json] [-- HZ_ARGS…]</code></pre>
+<p>Two modes in one command. Without <code>--hz</code> it lists video devices
+(<code>/dev/video*</code> plus <code>/sys/class/video4linux/*/name</code>) and the live topics
+carrying <code>sensor_msgs/msg/Image</code> or <code>sensor_msgs/msg/CompressedImage</code>:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi perception camera</span>
+<span class="out">Video devices
+Device       Name
+/dev/video0  HIK 2K Camera: HIK 2K Camera
+/dev/video1  HIK 2K Camera: HIK 2K Camera
+No live image topics (is a camera or simulator publishing?).</span>
+<span class="in">caasi perception camera --json</span>
+<span class="out">{
+  "devices": [{"device": "/dev/video0", "name": "HIK 2K Camera: HIK 2K Camera"}],
+  "topics": []
+}</span></span></code></pre>
+<p>With a running graph the second table appears:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi perception camera</span>
+<span class="out">Video devices
+Device       Name
+/dev/video0  HIK 2K Camera: HIK 2K Camera
+Live image topics
+Topic              Type
+/camera/image_raw  sensor_msgs/msg/Image
+/left/image_rect   sensor_msgs/msg/Image</span></span></code></pre>
+<p>With <code>--hz TOPIC</code> it becomes a bounded rate sample: Caasi runs
+<code>ros2 topic hz --window &lt;N&gt; &lt;topic&gt;</code> in the foreground, wrapped in
+coreutils <code>timeout &lt;duration&gt;</code>, and passes the output (and exit code) through.
+<code>--json</code> returns the parsed sample instead:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi perception camera --hz /camera/image_raw --duration 5</span>
+<span class="out">average rate: 29.998
+        min: 0.032s max: 0.035s std dev: 0.00086s window: 10</span>
+<span class="in">caasi perception camera --hz /camera/image_raw --json</span>
+<span class="out">{ "topic": "/camera/image_raw", "rate": 29.998, "detail": "29.998 Hz" }</span>
+<span class="in">caasi perception camera --hz /nope --json</span>
+<span class="out">{ "topic": "/nope", "rate": null, "detail": "no messages received" }</span></span></code></pre>
+<p>If coreutils <code>timeout</code> is unavailable the sample is unbounded and Caasi says so:
+<code>coreutils `timeout` not found — the sample is not time-bounded.</code> With no devices and
+no topics at all you also get <code>No camera device and no image topic found.</code> Exit code
+is <code>0</code> in list mode; in <code>--hz</code> mode it mirrors <code>ros2</code>.</p>
+
+<h3 id="perception-pose">caasi perception pose</h3>
+<pre class="syn"><code>caasi perception pose [--topic|-t NAME] [--json] [-- ECHO_ARGS…]</code></pre>
+<p>A foreground <code>ros2 topic echo</code> of the pose topic, with the exit code mirrored. The
+default topic comes from the catalog — the last entry of the <code>pose</code> capability's
+<code>topics</code>, i.e. <code>/apriltag/detections</code>:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi perception pose --topic /tf --once</span>
+<span class="out">---
+transforms:
+- header:
+    stamp: {sec: 1757203201, nanosec: 118}
+  frame_id: camera_00_link</span>
+<span class="in">caasi perception pose --json | jq '{command, returncode}'</span>
+<span class="out">{ "command": ["/opt/ros/jazzy/bin/ros2", "topic", "echo", "/apriltag/detections"],
+  "returncode": 0 }</span></span></code></pre>
+<p>JSON mode wraps the delegated command:
+<code>{"command", "returncode", "stdout", "stderr"}</code> — the convention shared with
+<a href="native.html">caasi native</a>. Streaming without a bound would block forever, so pass
+your own <code>ros2</code> flags (<code>--once</code>, <code>--no-arr</code>) as pass-through
+args.</p>
+
+<h3 id="perception-detect">caasi perception detect / segment</h3>
+<pre class="syn"><code>caasi perception detect [--name NAME] [--dry-run] [--json] [-- LAUNCH_ARGS…]
+caasi perception segment [--name NAME] [--dry-run] [--json] [-- LAUNCH_ARGS…]</code></pre>
+<p>Both resolve the corresponding <code>isaacros</code> capability (<code>detection</code>,
+<code>segmentation</code>) and start its launch file as a tracked run with
+<code>kind: perception</code>:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi perception detect --dry-run</span>
+<span class="out">Dry run — nothing was launched:
+  command: /opt/ros/jazzy/bin/ros2 launch isaac_ros_object_detection object_detection.launch.py</span>
+<span class="in">caasi perception detect --name detect-people</span>
+<span class="ok">Started run 20260907-103011-detect-people.</span>
+<span class="dim">  Follow it with: caasi logs 20260907-103011-detect-people -f</span>
+<span class="in">caasi perception segment</span>
+<span class="err">Error: 'segmentation' is not installed. See what is available with: caasi isaac-ros list</span>
+<span class="err">exit code: 1</span></span></code></pre>
+<p>That last message is what you get on a machine without Isaac ROS — <code>detect</code> fails
+the same way with <code>'detection'</code>. Both accept pass-through launch arguments, so
+model paths and topic remaps go straight to the upstream launch file.</p>
+
+<h3 id="perception-inspect">caasi perception inspect</h3>
+<pre class="syn"><code>caasi perception inspect [NODE] [--qos/--no-qos] [--json]</code></pre>
+<p><code>ros2 node info</code> for every running perception node — or for the one you name. A
+node belongs to the group when its name contains one of the catalog targets (an
+<code>isaac_ros_</code> prefix is also matched stripped, so <code>/visual_slam</code> counts).
+With <code>--qos</code> (the default) each subscriber/publisher topic is also expanded with
+<code>ros2 topic info -v</code>:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi perception inspect</span>
+<span class="out">No perception nodes are running.
+Start one (caasi perception detect) or pass a node name.</span>
+<span class="in">caasi perception inspect /isaac_ros_detection</span>
+<span class="out">/isaac_ros_detection
+  Subscribers
+    /camera/image_raw sensor_msgs/msg/Image
+      publisher /camera_node: RELIABLE / VOLATILE
+      subscription /isaac_ros_detection: BEST_EFFORT / VOLATILE
+  Publishers
+    /detections_output isaac_ros_nitros_interfaces/msg/NitrosImage
+      publisher /isaac_ros_detection: RELIABLE / VOLATILE</span>
+<span class="in">caasi perception inspect /isaac_ros_detection --json | jq '.nodes[0].interfaces.Publishers'</span>
+<span class="out">[{"endpoint": "/detections_output", "type": "isaac_ros_nitros_interfaces/msg/NitrosImage"}]</span></span></code></pre>
+<p>QoS rows read <code>&lt;endpoint&gt; &lt;node&gt;: &lt;reliability&gt; / &lt;durability&gt;</code>.
+JSON is <code>{"nodes": [{"node", "interfaces": {&lt;section&gt;: [{"endpoint", "type"}]}}]}</code>
+with the sections <code>Subscribers</code>, <code>Publishers</code>, <code>Service Servers</code>,
+<code>Service Clients</code>, <code>Action Servers</code>, <code>Action Clients</code>; with
+nothing running it is <code>{"nodes": []}</code> and the exit code stays <code>0</code>.</p>
+
+<h2 id="slam">caasi slam</h2>
+<p>Pick a SLAM backend from the catalog, launch it as a tracked run, then prove it works: node
+alive, expected topics published, rates sampled.</p>
+
+<h3 id="slam-catalog">Capabilities</h3>
+<table>
+  <thead><tr><th>Capability</th><th>Upstream package</th><th>Launch file</th><th>Expected topics</th><th>Caasi verb</th></tr></thead>
+  <tbody>
+    <tr><td><code>visual</code> <span class="pill">core</span></td><td><code>isaac_ros_visual_slam</code></td><td><code>visual_slam.launch.py</code></td><td><code>/tf</code>, <code>/map</code>, <code>/visual_slam/tracking/odometry</code></td><td><code>slam launch</code></td></tr>
+    <tr><td><code>toolbox</code> <span class="pill">core</span></td><td><code>slam_toolbox</code></td><td><code>online_async_launch.py</code></td><td><code>/tf</code>, <code>/map</code>, <code>/scan</code></td><td><code>slam launch</code></td></tr>
+    <tr><td><code>cartographer</code></td><td><code>cartographer_ros</code></td><td><code>cartographer.launch.py</code></td><td><code>/tf</code>, <code>/map</code></td><td><code>slam launch</code></td></tr>
+  </tbody>
+</table>
+<p>Pin the CPU backend as your default once, and every <code>slam</code> command follows:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi config set catalog.slam.default toolbox</span>
+<span class="out">Set catalog.slam.default = toolbox (saved to /home/you/.config/caasi/config.yaml)</span>
+<span class="in">caasi slam status</span>
+<span class="out">SLAM
+  ROS distro     jazzy
+  Sourced        yes
+Capability    State      Detail
+visual        absent     not installed
+toolbox       running    /opt/ros/jazzy
+cartographer  absent     not installed
+1 of 3 capabilities installed.</span></span></code></pre>
+
+<h3 id="slam-launch">caasi slam launch</h3>
+<pre class="syn"><code>caasi slam launch [--backend|-b CAP] [--name NAME] [--dry-run] [--json] [-- LAUNCH_ARGS…]</code></pre>
+<p>Starts the resolved backend's launch file as a tracked run (<code>kind: slam</code>) named
+after the capability unless you pass <code>--name</code>:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi slam launch --dry-run</span>
+<span class="out">Dry run — nothing was launched:
+  command: /opt/ros/jazzy/bin/ros2 launch slam_toolbox online_async_launch.py</span>
+<span class="in">caasi slam launch -b visual use_sim_time:=true</span>
+<span class="ok">Started run 20260907-104122-visual.</span>
+<span class="dim">  Follow it with: caasi logs 20260907-104122-visual -f</span>
+<span class="in">caasi slam launch -b nope</span>
+<span class="err">Error: Unknown slam capability 'nope'. Known: visual, toolbox, cartographer</span></span></code></pre>
+
+<h3 id="slam-test">caasi slam test</h3>
+<pre class="syn"><code>caasi slam test [--backend|-b CAP] [--hz] [--duration 5.0] [--window 10] [--verbose] [--json]</code></pre>
+<p>The readiness gate, as a ladder: backend installed → its node alive in the graph → each
+expected topic published → (with <code>--hz</code>) each topic's rate sampled. Exit
+<code>0</code> when nothing failed, <code>1</code> when any check did:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi slam test</span>
+<span class="ok">✓ SLAM Toolbox — /opt/ros/jazzy
+✓ SLAM node — /slam_toolbox
+✓ Topic /tf — /tf
+✓ Topic /map — /map</span>
+<span class="err">✗ Topic /scan — not published
+    ↳ Check the graph with: caasi ros graph (expected /scan)</span>
+<span class="err">exit code: 1</span>
+<span class="in">caasi slam test --hz --json | jq '{backend, exit_code, checks: [.checks[].name]}'</span>
+<span class="out">{ "backend": "toolbox", "exit_code": 0,
+  "checks": ["SLAM Toolbox", "SLAM node", "Topic /tf", "Topic /map", "Topic /scan",
+             "Rate /tf", "Rate /map", "Rate /scan"] }</span></span></code></pre>
+<p>Rate rows report <code>&lt;rate&gt; Hz</code> (<code>ok</code>) or
+<code>no messages received</code> (<code>warn</code> — a warning never fails the gate). With no
+node running you get <code>✗ SLAM node — no SLAM node is running</code> with the hint
+<code>Start one with: caasi slam launch</code>, and every topic row becomes a skip. With no
+<code>ros2</code> CLI at all the whole test is one skip row. JSON is
+<code>{"domain": "slam", "backend", "checks", "exit_code"}</code>.</p>
+<pre class="term"><code><span class="t-head">shell — nothing installed</span><span class="t-body"><span class="in">caasi slam test</span>
+<span class="err">Error: No slam capability is installed. Install it, or point Caasi at the renamed upstream with `caasi config set catalog.slam.&lt;capability&gt;.&lt;field&gt; [...]`.</span>
+<span class="err">exit code: 1</span></span></code></pre>
+
+<h3 id="slam-benchmark">caasi slam benchmark</h3>
+<pre class="syn"><code>caasi slam benchmark [--script PATH] [--topic|-t NAME] [--backend|-b CAP] [--duration 10.0]
+                     [--window 10] [--name NAME] [--dry-run] [--json] [-- SCRIPT_ARGS…]</code></pre>
+<p>Two flavours, both tracked runs with <code>kind: benchmark</code>:</p>
+<ul>
+  <li><strong>topic rate</strong> (default): <code>ros2 topic hz --window &lt;N&gt; &lt;topic&gt;</code>
+      bounded by <code>timeout &lt;duration&gt;</code>, named <code>slam-hz-&lt;topic&gt;</code>.
+      The topic defaults to the first expected topic of the resolved backend.</li>
+  <li><strong>your script</strong> (<code>--script</code>): run through the run system with
+      <code>backend: script</code> — a <code>.py</code> file uses the CLI's own interpreter,
+      anything else is executed directly.</li>
+</ul>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi slam benchmark --script bench/ate.py --dry-run</span>
+<span class="out">Dry run — nothing was launched:
+  command: /home/you/.caasi/venv/bin/python3 bench/ate.py</span>
+<span class="in">caasi slam benchmark --topic /visual_slam/tracking/odometry --duration 30</span>
+<span class="ok">Started run 20260907-105533-slam-hz-visual-slam-tracking-odometry.</span>
+<span class="dim">  Follow it with: caasi logs 20260907-105533-slam-hz-visual-slam-tracking-odometry -f
+  When finished: caasi benchmark report 20260907-105533-slam-hz-visual-slam-tracking-odometry</span>
+<span class="in">caasi slam benchmark --script bench/nope.py</span>
+<span class="err">Error: Script not found: bench/nope.py</span></span></code></pre>
+<p>Without a resolvable backend and without <code>--script</code>/<code>--topic</code> there is
+nothing to sample: <code>Error: No topic to sample; pass --topic or a --script.</code> When
+coreutils <code>timeout</code> is missing the run is started unbounded and the dry run says
+<code>coreutils `timeout` not found — the sample is not time-bounded.</code></p>
+
+<h2 id="mapping">caasi mapping</h2>
+<p>Run a mapper as a tracked run, then read the map it saved — offline, from the YAML and the
+header bytes of its image. No image library and no ROS needed for <code>inspect</code>.</p>
+
+<h3 id="mapping-catalog">Capabilities</h3>
+<table>
+  <thead><tr><th>Capability</th><th>Upstream package / binary</th><th>Launch file</th><th>Caasi verb</th></tr></thead>
+  <tbody>
+    <tr><td><code>nvblox</code> <span class="pill">core</span></td><td><code>isaac_ros_nvblox</code></td><td><code>nvblox.launch.py</code></td><td><code>mapping run</code></td></tr>
+    <tr><td><code>map_saver</code> <span class="pill">core</span></td><td><code>nav2_map_server</code>, binary <code>map_saver_cli</code></td><td>—</td><td>detected by <code>status</code>; run it with <a href="native.html"><code>caasi native ros</code></a></td></tr>
+    <tr><td><code>occupancy</code></td><td><code>slam_toolbox</code></td><td><code>online_async_launch.py</code></td><td><code>mapping run -b occupancy</code></td></tr>
+  </tbody>
+</table>
+
+<h3 id="mapping-run">caasi mapping run</h3>
+<pre class="syn"><code>caasi mapping run [--backend|-b CAP] [--name NAME] [--dry-run] [--json] [-- LAUNCH_ARGS…]</code></pre>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi mapping run --dry-run</span>
+<span class="out">Dry run — nothing was launched:
+  command: /opt/ros/jazzy/bin/ros2 launch isaac_ros_nvblox nvblox.launch.py</span>
+<span class="in">caasi mapping run -b occupancy --name hall-map use_sim_time:=true</span>
+<span class="ok">Started run 20260907-110412-hall-map.</span>
+<span class="dim">  Follow it with: caasi logs 20260907-110412-hall-map -f</span>
+<span class="in">caasi mapping run -b map_saver</span>
+<span class="err">Error: No launch file is defined for 'map_saver' in domain 'mapping'.</span>
+<span class="in">caasi mapping run -b occupancy</span>
+<span class="err">Error: 'occupancy' is not available (slam_toolbox). Install it, or point Caasi at the renamed upstream with `caasi config set catalog.mapping.occupancy.packages [...]`.</span></span></code></pre>
+<p><code>map_saver</code> is a detection-only capability: it has a package and a binary but no
+launch file, so the run verb refuses it honestly instead of inventing a command line. Save a map
+with <code>caasi native ros run nav2_map_server map_saver_cli -f maps/hall</code>.</p>
+
+<h3 id="mapping-inspect">caasi mapping inspect</h3>
+<pre class="syn"><code>caasi mapping inspect MAP_YAML [--json]</code></pre>
+<p>Reads a Nav2/ROS map YAML — <code>image</code>, <code>resolution</code>, <code>origin</code>,
+<code>occupied_thresh</code>, <code>free_thresh</code>, <code>mode</code> — and the size of the
+referenced image, taken from the PNG <code>IHDR</code> or PGM/PBM header bytes. It also computes
+the real-world scale (<code>pixels × resolution</code>):</p>
+<pre class="term"><code><span class="t-head">maps/hall.yaml</span><span class="t-body"><span class="out">image: hall.pgm
+mode: trinary
+resolution: 0.05
+origin: [-10.0, -10.0, 0.0]
+occupied_thresh: 0.65
+free_thresh: 0.25</span></span></code></pre>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi mapping inspect maps/hall.yaml</span>
+<span class="out">hall.yaml
+  Image        maps/hall.pgm
+  Exists       yes
+  Size         800 × 600
+  Resolution   0.05
+  Origin       [-10.0, -10.0, 0.0]
+  Occupied     0.65
+  Free         0.25
+  Mode         trinary
+  Scale        40.0 m × 30.0 m</span>
+<span class="in">caasi mapping inspect maps/hall.yaml --json</span>
+<span class="out">{
+  "path": "maps/hall.yaml",
+  "image": "maps/hall.pgm",
+  "image_exists": true,
+  "width": 800,
+  "height": 600,
+  "resolution": 0.05,
+  "origin": [-10.0, -10.0, 0.0],
+  "occupied_thresh": 0.65,
+  "free_thresh": 0.25,
+  "mode": "trinary",
+  "width_metres": 40.0,
+  "height_metres": 30.0
+}</span></span></code></pre>
+<p>Exit <code>0</code> when the image exists, <code>1</code> when it does not — in both human and
+JSON mode (a missing image leaves <code>width</code>/<code>height</code>/<code>width_metres</code>/
+<code>height_metres</code> as <code>null</code> and prints
+<code>Error: The map image is missing: maps/hall.pgm</code>). Other failures:
+<code>Error: Map file not found: &lt;path&gt;</code> and
+<code>Error: Not a readable map YAML: &lt;error&gt;</code>.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi mapping inspect maps/broken.yaml</span>
+<span class="out">broken.yaml
+  Image        maps/missing.pgm
+  Exists       no
+  Size         —
+  Resolution   0.05
+  Origin       [-10.0, -10.0, 0.0]
+  Occupied     0.65
+  Free         0.25
+  Mode         trinary
+  Scale        —</span>
+<span class="err">Error: The map image is missing: maps/missing.pgm
+exit code: 1</span></span></code></pre>
+
+<h2 id="motion">caasi motion</h2>
+<p>GPU motion planning servers and the goals you send them. <code>status</code> adds a
+<code>GPU</code> row (from <code>nvidia-smi</code>) because every capability here wants one;
+planning itself always happens inside cuMotion, cuRobo or MoveIt 2.</p>
+
+<h3 id="motion-catalog">Capabilities</h3>
+<table>
+  <thead><tr><th>Capability</th><th>Probed via</th><th>Launch file</th><th>Caasi verb</th></tr></thead>
+  <tbody>
+    <tr><td><code>cumotion</code> <span class="pill">core</span></td><td><code>isaac_ros_cumotion</code></td><td><code>isaac_ros_cumotion.launch.py</code></td><td><code>motion serve</code></td></tr>
+    <tr><td><code>curobo</code></td><td>pip module <code>curobo</code> / <code>nvidia-curobo</code></td><td>—</td><td>detected by <code>status</code>/<code>doctor</code>; bring your own script to <code>motion benchmark</code></td></tr>
+    <tr><td><code>moveit</code> <span class="pill">core</span></td><td><code>moveit_core</code>, <code>moveit_ros_planning</code></td><td>—</td><td>detected by <code>status</code>/<code>doctor</code>; goals via <code>motion plan</code>/<code>execute</code></td></tr>
+    <tr><td><code>ompl</code> <span class="pill">core</span></td><td><code>moveit_planners_ompl</code></td><td>—</td><td>detected by <code>status</code>/<code>doctor</code></td></tr>
+    <tr><td><code>pilz</code></td><td><code>pilz_industrial_motion_planner</code></td><td>—</td><td>detected by <code>status</code>/<code>doctor</code></td></tr>
+    <tr><td><code>stomp</code></td><td><code>moveit_planners_stomp</code></td><td>—</td><td>detected by <code>status</code>/<code>doctor</code></td></tr>
+    <tr><td><code>chomp</code></td><td><code>moveit_planners_chomp</code></td><td>—</td><td>detected by <code>status</code>/<code>doctor</code></td></tr>
+  </tbody>
+</table>
+<p><code>cumotion</code> is the only capability with a launch file, so it is the only one
+<code>motion serve</code> can start. The MoveIt family are planner <em>libraries</em>: Caasi
+detects them so <code>status</code> and <code>caasi doctor --component accelerated</code> can
+report your toolchain, but it never launches a MoveIt server itself — that stays your own
+MoveIt/Nav2 launch. What Caasi does talk to is whatever action server is already running.</p>
+
+<h3 id="motion-status">caasi motion status</h3>
+<pre class="syn"><code>caasi motion status [--json]</code></pre>
+<p>The <code>GPU</code> row comes from <code>nvidia-smi</code> (the JSON payload carries it as
+<code>"gpu"</code>, <code>null</code> when there is no NVIDIA GPU):</p>
+<pre class="term"><code><span class="t-head">shell — this machine: no motion stack</span><span class="t-body"><span class="in">caasi motion status</span>
+<span class="out">Motion Planning
+  ROS distro     jazzy
+  Sourced        yes
+  GPU            NVIDIA GeForce RTX 3080
+Capability  State    Detail
+cumotion    missing  not installed
+curobo      absent   not installed
+moveit      missing  not installed
+ompl        missing  not installed
+pilz        absent   not installed
+stomp       absent   not installed
+chomp       absent   not installed
+0 of 7 capabilities installed.</span>
+<span class="in">caasi motion status --json | jq '{domain, kind, total, installed, gpu}'</span>
+<span class="out">{ "domain": "motion", "kind": "ros", "total": 7, "installed": 0,
+  "gpu": "NVIDIA GeForce RTX 3080" }</span></span></code></pre>
+<p><code>cumotion</code>, <code>moveit</code> and <code>ompl</code> are core — not finding them
+is a red <code>missing</code>; the rest are optional and stay grey <code>absent</code>.</p>
+
+<h3 id="motion-serve">caasi motion serve</h3>
+<pre class="syn"><code>caasi motion serve [--backend|-b CAP] [--name NAME] [--dry-run] [--json] [-- LAUNCH_ARGS…]</code></pre>
+<p>The domain's run verb: a tracked run with <code>kind: motion</code>, <code>backend: ros</code>
+and the extra fields <code>domain</code>/<code>capability</code>, exactly like
+<code>slam launch</code> and <code>mapping run</code>.</p>
+<pre class="term"><code><span class="t-head">shell — cuMotion installed</span><span class="t-body"><span class="in">caasi motion serve --dry-run</span>
+<span class="out">Dry run — nothing was launched:
+  command: /opt/ros/jazzy/bin/ros2 launch isaac_ros_cumotion isaac_ros_cumotion.launch.py</span>
+<span class="in">caasi motion serve --name planner use_sim_time:=true</span>
+<span class="ok">Started run 20260907-112043-planner.</span>
+<span class="dim">  Follow it with: caasi logs 20260907-112043-planner -f</span>
+<span class="in">caasi motion serve -b curobo</span>
+<span class="err">Error: No launch file is defined for 'curobo' in domain 'motion'.</span></span></code></pre>
+<p>Every other capability fails that same honest way — a pip module or a planner library has no
+launch file, and Caasi refuses to invent one. On a machine with nothing installed (this one),
+even <code>cumotion</code> stops at the probe:</p>
+<pre class="term"><code><span class="t-head">shell — nothing installed</span><span class="t-body"><span class="in">caasi motion serve -b cumotion --dry-run</span>
+<span class="err">Error: 'cumotion' is not available (isaac_ros_cumotion). Install it, or point Caasi at the renamed upstream with `caasi config set catalog.motion.cumotion.packages [...]`.</span>
+<span class="err">exit code: 1</span></span></code></pre>
+
+<h3 id="motion-goals">caasi motion plan / execute</h3>
+<pre class="syn"><code>caasi motion plan ACTION [--json] [-- GOAL_ARGS…]
+caasi motion execute ACTION [--json] [-- GOAL_ARGS…]</code></pre>
+<table>
+  <thead><tr><th>Parameter</th><th>Kind</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>ACTION</code></td><td>argument</td><td>str</td><td>required</td><td>Action name, e.g. <code>/compute_ik</code>.</td></tr>
+    <tr><td><code>--json</code></td><td>option</td><td>flag</td><td>off</td><td>Wrap the delegated command instead of streaming it.</td></tr>
+    <tr><td>trailing args</td><td>pass-through</td><td></td><td></td><td>Appended verbatim to <code>ros2 action send_goal</code> (goal type, YAML payload, <code>--feedback</code>).</td></tr>
+  </tbody>
+</table>
+<p>Foreground pass-throughs, not tracked runs. Both first read <code>ros2 action list</code> and
+fail before sending anything when there is no server — or no server <em>by that name</em>:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi motion plan /compute_ik</span>
+<span class="err">Error: No action server is reachable. Start one with: caasi motion serve
+exit code: 1</span>
+<span class="in">caasi motion plan /nope</span>
+<span class="err">Error: No action server for '/nope'. Available: /compute_ik, /plan_path
+exit code: 1</span>
+<span class="in">caasi motion plan /compute_ik isaac_ros_cumotion/action/ComputeIK "{…}"</span>
+<span class="dim"># everything after ACTION goes to `ros2 action send_goal` verbatim —
+# output and exit code are ros2's own; --json wraps them as
+# {"command", "returncode", "stdout", "stderr"}, like perception pose</span></span></code></pre>
+
+<h3 id="motion-benchmark">caasi motion benchmark</h3>
+<pre class="syn"><code>caasi motion benchmark SCRIPT [--name NAME] [--dry-run] [--json] [-- SCRIPT_ARGS…]</code></pre>
+<p>Unlike <code>slam benchmark</code> (which can sample a topic rate itself), motion benchmarking
+is always <em>your</em> script — <code>SCRIPT</code> is a required positional argument. It runs
+as a tracked run with <code>kind: benchmark</code>, <code>backend: script</code>, named after the
+script's stem unless you pass <code>--name</code>; a <code>.py</code> file uses the CLI's own
+interpreter, anything else is executed directly, and trailing args go to the script:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi motion benchmark bench/plan.py --dry-run</span>
+<span class="out">Dry run — nothing was launched:
+  command: /home/you/.caasi/venv/bin/python3 bench/plan.py</span>
+<span class="in">caasi motion benchmark bench/plan.py --name cumotion-bench</span>
+<span class="ok">Started run 20260907-114512-cumotion-bench.</span>
+<span class="dim">  Follow it with: caasi logs 20260907-114512-cumotion-bench -f
+  When finished: caasi benchmark report 20260907-114512-cumotion-bench</span>
+<span class="in">caasi motion benchmark bench/nope.py</span>
+<span class="err">Error: Script not found: bench/nope.py</span></span></code></pre>
+
+<h2 id="nitros">caasi nitros</h2>
+<p>NITROS is the zero-copy GPU transport that the rest of the accelerated stack rides on — CUDA
+memory published as ROS 2 messages so GPU nodes share buffers instead of copying. There is
+nothing to launch, so the domain's verbs are just <code>status</code> and <code>doctor</code>:
+no run verb, no <code>list</code>.</p>
+
+<h3 id="nitros-catalog">Capabilities</h3>
+<table>
+  <thead><tr><th>Capability</th><th>Probed via</th><th>What it tells you</th></tr></thead>
+  <tbody>
+    <tr><td><code>core</code> <span class="pill">core</span></td><td><code>isaac_ros_nitros</code></td><td>the transport library itself</td></tr>
+    <tr><td><code>types</code></td><td><code>isaac_ros_nitros_type_interfaces</code></td><td>the <code>Nitros*</code> message definitions <a href="#pipeline"><code>pipeline inspect</code></a> looks for</td></tr>
+    <tr><td><code>bridge</code></td><td><code>isaac_ros_nitros_bridge</code></td><td>bridging between plain and NITROS graphs</td></tr>
+    <tr><td><code>disable</code></td><td>env <code>ROS_DISABLE_NITROS</code></td><td>set in the environment → Isaac ROS nodes fall back to plain types</td></tr>
+  </tbody>
+</table>
+
+<h3 id="nitros-status">caasi nitros status</h3>
+<pre class="syn"><code>caasi nitros status [--json]</code></pre>
+<p>The extra rows are <code>CUDA</code> and <code>TensorRT</code>; a row whose probe finds
+nothing is omitted from the human view (no TensorRT distribution here, so no TensorRT row), but
+the JSON always carries both keys:</p>
+<pre class="term"><code><span class="t-head">shell — CUDA present, NITROS not installed</span><span class="t-body"><span class="in">caasi nitros status</span>
+<span class="out">NITROS
+  ROS distro     jazzy
+  Sourced        yes
+  CUDA           13.0
+Capability  State    Detail
+core        missing  not installed
+types       absent   not installed
+bridge      absent   not installed
+disable     absent   not installed
+0 of 4 capabilities installed.</span>
+<span class="in">caasi nitros status --json | jq '{cuda, tensorrt}'</span>
+<span class="out">{ "cuda": "13.0", "tensorrt": null }</span></span></code></pre>
+<p><code>ROS_DISABLE_NITROS</code> is an env probe: when it is set, the <code>disable</code>
+capability flips to <code>installed</code> with the variable's value as its detail. Caasi only
+<em>reports</em> it — Isaac ROS nodes themselves read it and fall back to plain message types,
+which is the escape hatch when a NITROS build misbehaves at runtime:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">ROS_DISABLE_NITROS=1 caasi nitros status</span>
+<span class="out">NITROS
+  ROS distro     jazzy
+  Sourced        yes
+  CUDA           13.0
+Capability  State      Detail
+core        missing    not installed
+types       absent     not installed
+bridge      absent     not installed
+disable     installed  1
+1 of 4 capabilities installed.</span>
+<span class="in">ROS_DISABLE_NITROS=1 caasi nitros status --json | jq '.capabilities[3] | {key, found, how, value}'</span>
+<span class="out">{ "key": "disable", "found": true, "how": "env", "value": "1" }</span></span></code></pre>
+<p>With NITROS disabled the running graph is plain by construction — <a href="#pipeline"><code>caasi
+pipeline inspect</code></a> shows exactly which topics that affects.</p>
+
+<h3 id="nitros-doctor">caasi nitros doctor</h3>
+<pre class="syn"><code>caasi nitros doctor [--verbose] [--json]</code></pre>
+<p>Three check sections — <code>accelerated</code>, <code>nvidia</code>, <code>graphics</code>
+(the <code>isaac-ros doctor</code> set minus <code>ros</code>) — plus two NITROS extras:</p>
+<ul>
+  <li><strong>What NITROS does</strong> — always a skip row; it explains rather than checks, and
+      its hint (<code>Nodes must be NITROS-aware; a plain node in the chain forces a CPU
+      copy.</code>) appears only with <code>--verbose</code>.</li>
+  <li><strong>Graph mixing</strong> — the same live-graph findings as <code>pipeline inspect</code>,
+      as one row: a warning when topics cross a GPU/CPU boundary, <code>ok</code> when nodes are
+      running and none do, and no row at all when nothing is running.</li>
+</ul>
+<pre class="term"><code><span class="t-head">shell — this machine, empty graph</span><span class="t-body"><span class="in">caasi nitros doctor</span>
+<span class="dim"># …the same accelerated capability rows as `caasi isaac-ros doctor`, then:</span>
+<span class="ok">✓ CUDA (driver) — 13.0</span>
+<span class="warn">! TensorRT (python) — no tensorrt distribution found
+    ↳ Isaac ROS inference nodes need TensorRT; install it or use the Isaac ROS container.</span>
+<span class="dim">• RMW_IMPLEMENTATION — not set (ROS 2 default)
+• ROS_DOMAIN_ID — not set (domain 0)</span>
+<span class="ok">✓ NVIDIA driver — driver 580.173.02
+✓ GPU — NVIDIA GeForce RTX 3080, 10.0 GiB VRAM
+✓ CUDA — CUDA 13.0 (driver-reported)
+✓ Vulkan — libvulkan available
+✓ Display server — display available</span>
+<span class="dim">• What NITROS does — Publishes CUDA memory as ROS 2 messages so GPU nodes share buffers instead of copying.</span>
+<span class="err">exit code: 1</span></span></code></pre>
+<pre class="term"><code><span class="t-head">shell — with a graph running</span><span class="t-body"><span class="in">caasi nitros doctor</span>
+<span class="warn">! Graph mixing — 1 topic(s) cross a GPU/CPU boundary, e.g. /camera/image_raw
+    ↳ Use the NITROS type on both sides, or accept the copy at that boundary.</span>
+<span class="in">caasi nitros doctor --json | jq '.sections, .exit_code'</span>
+<span class="out">["accelerated", "nvidia", "graphics"]
+1</span></span></code></pre>
+<p>A clean graph reports <code>✓ Graph mixing — no GPU/CPU boundary in the running graph
+(7 node(s))</code>. Exit is <code>1</code> if any check failed — the Graph mixing warning alone
+does not fail the doctor.</p>
+
+<h2 id="pipeline">caasi pipeline</h2>
+<p>Not a catalog group: there is no domain behind it, nothing to install and nothing to launch.
+One command reads the <em>live</em> ROS graph and reports where your pipeline loses the GPU —
+the same findings that back the <code>nitros doctor</code> Graph mixing row.</p>
+
+<h3 id="pipeline-inspect">caasi pipeline inspect</h3>
+<pre class="syn"><code>caasi pipeline inspect [NODE] [--qos/--no-qos] [--json]</code></pre>
+<table>
+  <thead><tr><th>Parameter</th><th>Kind</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>NODE</code></td><td>argument</td><td>str</td><td>whole graph</td><td>Inspect only this node.</td></tr>
+    <tr><td><code>--qos</code> / <code>--no-qos</code></td><td>option</td><td>flag</td><td>on</td><td>Also show the QoS of each topic.</td></tr>
+    <tr><td><code>--json</code></td><td>option</td><td>flag</td><td>off</td><td>Emit the findings payload.</td></tr>
+  </tbody>
+</table>
+<p>The data path is pure <code>ros2</code>: nodes from <code>ros2 node list</code> (or the one
+<code>NODE</code> you name), each node's endpoints from <code>ros2 node info</code>, and — with
+<code>--qos</code> — per-topic endpoints from <code>ros2 topic info -v</code>. A node counts as
+<em>accelerated</em> when its name contains <code>isaac_ros_</code> or <code>nitros</code>
+(case-insensitive). Everything reported is computed from that; nothing is estimated:</p>
+<ul>
+  <li><strong>plain</strong> — a topic carrying a plain message type that has a NITROS
+      counterpart, with at least one accelerated node on it. A pure-CPU graph yields nothing:
+      there is no acceleration to lose there.</li>
+  <li><strong>boundaries</strong> — an accelerated node and a plain node on the same topic:
+      every message across it is a GPU↔CPU copy.</li>
+  <li><strong>qos</strong> — incompatible pub/sub pairs, with the reason spelled out:
+      <code>BEST_EFFORT publisher cannot reach a RELIABLE subscriber</code> or
+      <code>VOLATILE publisher cannot reach a TRANSIENT_LOCAL subscriber</code>.</li>
+</ul>
+<p>The plain-type map the <code>plain</code> finding is computed against — every accelerated
+type lives in <code>isaac_ros_nitros_interfaces/msg/</code>:</p>
+<table>
+  <thead><tr><th>Plain type</th><th>Accelerated type</th></tr></thead>
+  <tbody>
+    <tr><td><code>sensor_msgs/msg/Image</code></td><td><code>NitrosImage</code></td></tr>
+    <tr><td><code>sensor_msgs/msg/CompressedImage</code></td><td><code>NitrosCompressedImage</code></td></tr>
+    <tr><td><code>sensor_msgs/msg/CameraInfo</code></td><td><code>NitrosCameraInfo</code></td></tr>
+    <tr><td><code>sensor_msgs/msg/Imu</code></td><td><code>NitrosImu</code></td></tr>
+    <tr><td><code>sensor_msgs/msg/PointCloud2</code></td><td><code>NitrosPointCloud2</code></td></tr>
+    <tr><td><code>sensor_msgs/msg/LaserScan</code></td><td><code>NitrosLaserScan</code></td></tr>
+    <tr><td><code>nav_msgs/msg/Odometry</code></td><td><code>NitrosOdometry</code></td></tr>
+    <tr><td><code>nav_msgs/msg/OccupancyGrid</code></td><td><code>NitrosOccupancyGrid</code></td></tr>
+    <tr><td><code>stereo_msgs/msg/DisparityImage</code></td><td><code>NitrosDisparityImage</code></td></tr>
+  </tbody>
+</table>
+<p>On a machine with nothing running (this one) it says so and still exits <code>0</code> —
+<code>inspect</code> reports, it does not gate:</p>
+<pre class="term"><code><span class="t-head">shell — empty graph</span><span class="t-body"><span class="in">caasi pipeline inspect</span>
+<span class="dim">No nodes are running.
+Start your graph first; this command reads the live ROS graph.</span>
+<span class="in">caasi pipeline inspect --json</span>
+<span class="out">{
+  "nodes": [],
+  "plain": [],
+  "boundaries": [],
+  "qos": []
+}</span></span></code></pre>
+<p>The empty-graph payload short-circuits before any finding is computed, so it carries only
+those four keys. With nodes running the full payload has six, in order: <code>nodes</code> (the
+inspected node names), <code>accelerated</code> (the subset matching the tokens),
+<code>topics</code> (count of distinct typed topics seen), <code>plain</code>,
+<code>boundaries</code>, <code>qos</code>:</p>
+<pre class="term"><code><span class="t-head">shell — a graph that mixes GPU and CPU</span><span class="t-body"><span class="in">caasi pipeline inspect</span>
+<span class="out">5 node(s), 2 accelerated, 6 topic(s) in the graph.
+Topics that could be accelerated
+Topic              Type                   Accelerated type
+/camera/image_raw  sensor_msgs/msg/Image  isaac_ros_nitros_interfaces/msg/NitrosImage</span>
+<span class="warn">! /camera/image_raw: GPU/CPU copy between /isaac_ros_detection and /camera_node
+! /camera/image_raw: /camera_node → /isaac_ros_detection — BEST_EFFORT publisher cannot reach a RELIABLE subscriber</span>
+<span class="dim">Publish the accelerated type on both sides of a boundary to avoid the copy.</span></span></code></pre>
+<pre class="term"><code><span class="t-head">shell — a clean accelerated graph</span><span class="t-body"><span class="in">caasi pipeline inspect</span>
+<span class="out">7 node(s), 4 accelerated, 9 topic(s) in the graph.</span>
+<span class="dim">No acceleration boundary found in the running graph.</span>
+<span class="in">caasi pipeline inspect --json | jq '.plain[0], .boundaries[0], .qos[0]'</span>
+<span class="out">{ "topic": "/camera/image_raw", "type": "sensor_msgs/msg/Image",
+  "accelerated_type": "isaac_ros_nitros_interfaces/msg/NitrosImage",
+  "nodes": ["/camera_node", "/isaac_ros_detection"] }
+{ "topic": "/camera/image_raw", "type": "sensor_msgs/msg/Image",
+  "accelerated": ["/isaac_ros_detection"], "plain": ["/camera_node"] }
+{ "topic": "/camera/image_raw", "publisher": "/camera_node",
+  "subscriber": "/isaac_ros_detection",
+  "reason": "BEST_EFFORT publisher cannot reach a RELIABLE subscriber" }</span></span></code></pre>
+<p>The closing line depends only on <code>plain</code> + <code>boundaries</code>: a graph with
+QoS mismatches but no acceleration boundary still ends with <code>No acceleration boundary found
+in the running graph.</code> Pass a single <code>NODE</code> to compute findings from just that
+node's endpoints. <code>--no-qos</code> skips the <code>ros2 topic info -v</code> round-trips and
+leaves <code>qos</code> empty.</p>
+<div class="callout tip">
+  <div class="c-title">One graph, three readers</div>
+  <p><code>pipeline inspect</code> (whole-graph findings), <code>nitros doctor</code> (the same
+  findings as one Graph mixing row) and <a href="#perception-inspect"><code>perception
+  inspect</code></a> (per-node interfaces and QoS) all read the same live graph through
+  <code>ros2</code>. None of them launches anything — start the graph with the run verbs, then
+  read it here.</p>
+</div>
+
+<div class="page-nav">
+  <a class="prev" href="ros.html"><span class="pn-label">Previous</span><span class="pn-title">← ROS Ecosystem</span></a>
+  <a class="next" href="synthetic.html"><span class="pn-label">Next</span><span class="pn-title">Synthetic Data &amp; Teleop →</span></a>
+</div>
+
+<footer class="doc-footer">
+  Caasi CLI 0.2.0 — these pages live in <code>docs/</code> and need no build step.
+  Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
+</footer>
+</main>
+</div>
+<script src="assets/copy.js"></script>
+<script src="assets/sidebar.js"></script>
+</body>
+</html>

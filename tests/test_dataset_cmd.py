@@ -8,6 +8,7 @@ import time
 
 import yaml
 
+from caasi.cli import dataset_cmd
 from caasi.cli.main import app
 from caasi.core import dataset as dataset_core
 
@@ -187,3 +188,165 @@ def test_dataset_generate_missing_config(runner, tmp_path, monkeypatch):
     result = runner.invoke(app, ["dataset", "generate", str(tmp_path / "nope.yaml")])
     assert result.exit_code == 1
     assert "not found" in result.output
+
+
+def make_tool(tmp_path, name):
+    """A fake download tool that echoes the arguments it received."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    tool = bin_dir / name
+    tool.write_text('#!/usr/bin/env bash\necho "tool-args $*"\n', encoding="utf-8")
+    tool.chmod(0o755)
+    return tool
+
+
+def test_dataset_list_empty(runner, tmp_path, monkeypatch):
+    configure_paths(tmp_path, monkeypatch)
+    result = runner.invoke(app, ["dataset", "list"])
+    assert result.exit_code == 0
+    assert "No datasets found" in result.output
+
+    result = runner.invoke(app, ["dataset", "list", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["datasets"] == []
+    assert data["base"] == str(tmp_path / "datasets")
+
+
+def test_dataset_list_table_and_json(runner, tmp_path, monkeypatch):
+    _runs, datasets_base = configure_paths(tmp_path, monkeypatch)
+    ready = datasets_base / "alpha-20260101-000000"
+    (ready / "episodes").mkdir(parents=True)
+    (ready / "episodes" / "ep-000.bin").write_bytes(b"x" * 10)
+    (ready / "metadata.json").write_text(
+        json.dumps({"name": "alpha", "status": "ready"}), encoding="utf-8"
+    )
+
+    result = runner.invoke(app, ["dataset", "list", "--json"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert len(data["datasets"]) == 1
+    entry = data["datasets"][0]
+    assert entry["name"] == "alpha-20260101-000000"
+    assert entry["status"] == "ready"
+    assert entry["files"] == 2
+    assert entry["size"] >= 10
+
+    result = runner.invoke(app, ["dataset", "list"])
+    assert result.exit_code == 0
+    assert "alpha-20260101-000000" in result.output
+    assert "ready" in result.output
+
+    result = runner.invoke(app, ["dataset", "list", "--limit", "0", "--json"])
+    assert result.exit_code == 0
+    assert json.loads(result.output)["datasets"] == []
+
+
+def test_dataset_download_dry_run_backends(runner, tmp_path, monkeypatch):
+    configure_paths(tmp_path, monkeypatch)
+    monkeypatch.setattr(dataset_cmd.shell, "which", lambda name: None)
+
+    result = runner.invoke(app, ["dataset", "download", "hf://lerobot/aloha_sim", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    flat = " ".join(result.output.split())
+    assert "hf download lerobot/aloha_sim --local-dir" in flat
+    assert "aloha-sim-" in flat
+
+    result = runner.invoke(app, ["dataset", "download", "ngc://org/ds:1.0", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    flat = " ".join(result.output.split())
+    assert "ngc registry dataset download-version org/ds:1.0 --dest" in flat
+
+    result = runner.invoke(
+        app, ["dataset", "download", "https://example.com/data.tar.gz", "--dry-run"]
+    )
+    assert result.exit_code == 0, result.output
+    flat = " ".join(result.output.split())
+    assert "curl -L -o" in flat
+    assert "data.tar.gz https://example.com/data.tar.gz" in flat
+
+    # dry runs leave no dataset directories behind
+    assert not list((tmp_path / "datasets").glob("*"))
+
+
+def test_dataset_download_passes_extra_args(runner, tmp_path, monkeypatch):
+    configure_paths(tmp_path, monkeypatch)
+    monkeypatch.setattr(dataset_cmd.shell, "which", lambda name: None)
+    result = runner.invoke(
+        app,
+        ["dataset", "download", "hf://lerobot/aloha_sim", "--dry-run", "--revision", "main"],
+    )
+    assert result.exit_code == 0, result.output
+    flat = " ".join(result.output.split())
+    assert "hf download lerobot/aloha_sim --revision main --local-dir" in flat
+
+
+def test_dataset_download_bad_ref(runner, tmp_path, monkeypatch):
+    configure_paths(tmp_path, monkeypatch)
+    result = runner.invoke(app, ["dataset", "download", "ftp://example.com/x"])
+    assert result.exit_code == 1
+    assert "Cannot detect a download backend" in result.output
+
+    result = runner.invoke(app, ["dataset", "download", "hf://a/b", "--backend", "ftp"])
+    assert result.exit_code == 1
+    assert "Cannot detect a download backend" in result.output
+
+
+def test_dataset_download_missing_tool(runner, tmp_path, monkeypatch):
+    configure_paths(tmp_path, monkeypatch)
+    monkeypatch.setattr(dataset_cmd.shell, "which", lambda name: None)
+    result = runner.invoke(app, ["dataset", "download", "hf://lerobot/aloha_sim"])
+    assert result.exit_code == 1
+    assert "No download tool found for backend 'hf'" in result.output
+
+
+def test_dataset_download_hf_tracked_run(runner, tmp_path, monkeypatch):
+    runs_base, datasets_base = configure_paths(tmp_path, monkeypatch)
+    tool = make_tool(tmp_path, "hf")
+    monkeypatch.setattr(
+        dataset_cmd.shell, "which", lambda name: str(tool) if name == "hf" else None
+    )
+
+    result = runner.invoke(app, ["dataset", "download", "hf://lerobot/aloha_sim"])
+    assert result.exit_code == 0, result.output
+    assert "Dataset download started" in result.output
+
+    run_dir = wait_for_run(runs_base)
+    assert (run_dir / "exit_code").read_text().strip() == "0"
+    stdout = (run_dir / "stdout.log").read_text()
+    assert "tool-args download lerobot/aloha_sim --local-dir" in " ".join(stdout.split())
+
+    datasets = dataset_core.list_datasets(datasets_base)
+    assert len(datasets) == 1
+    assert datasets[0].name.startswith("aloha-sim-")
+    metadata = dataset_core.read_metadata(datasets[0])
+    assert metadata["source"] == "hf://lerobot/aloha_sim"
+    assert metadata["backend"] == "hf"
+    assert metadata["status"] == "downloading"
+    assert metadata["run_id"] == run_dir.name
+
+
+def test_dataset_download_url_backend_override(runner, tmp_path, monkeypatch):
+    runs_base, datasets_base = configure_paths(tmp_path, monkeypatch)
+    tool = make_tool(tmp_path, "wget")
+    monkeypatch.setattr(
+        dataset_cmd.shell, "which", lambda name: str(tool) if name == "wget" else None
+    )
+
+    result = runner.invoke(
+        app,
+        ["dataset", "download", "https://example.com/data.tar.gz", "--name", "webdata"],
+    )
+    assert result.exit_code == 0, result.output
+
+    run_dir = wait_for_run(runs_base)
+    assert (run_dir / "exit_code").read_text().strip() == "0"
+    stdout = " ".join((run_dir / "stdout.log").read_text().split())
+    assert "tool-args -O" in stdout
+    assert "https://example.com/data.tar.gz" in stdout
+
+    datasets = dataset_core.list_datasets(datasets_base)
+    assert datasets[0].name.startswith("webdata-")
+    metadata = dataset_core.read_metadata(datasets[0])
+    assert metadata["backend"] == "url"
+    assert metadata["status"] == "downloading"

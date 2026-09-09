@@ -15,7 +15,6 @@ from ..utils import output
 def _render_report(results: list[CheckResult], verbose: bool) -> None:
     console = output.console()
     console.print(Text(_("doctor.title"), style="bold"))
-    console.print(Text("─" * 34, style="dim"))
 
     current_section: str | None = None
     for result in results:

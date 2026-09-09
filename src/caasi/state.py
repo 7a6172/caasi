@@ -21,6 +21,8 @@ class GlobalState:
     verbose: bool = False
     quiet: bool = False
     json_output: bool = False
+    color: str = "auto"
+    layout: Optional[str] = None
     config_path: Optional[Path] = None
     lang: Optional[str] = None
     config: Optional["Config"] = None
@@ -38,6 +40,8 @@ def configure(
     verbose: bool = False,
     quiet: bool = False,
     json_output: bool = False,
+    color: str = "auto",
+    layout: str | None = None,
     config_path: Path | None = None,
     lang: str | None = None,
 ) -> None:
@@ -47,6 +51,8 @@ def configure(
     _state.verbose = verbose
     _state.quiet = quiet
     _state.json_output = json_output
+    _state.color = color
+    _state.layout = layout
     _state.config_path = config_path
     _state.lang = lang
     _state.config = Config.load(config_path_override=config_path)

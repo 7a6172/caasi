@@ -46,7 +46,7 @@ def run_list(
     if not records:
         output.echo(f"[yellow]{_('run.no_runs')}[/yellow]")
         return
-    table = Table(title=_("run.list_title"), header_style="bold")
+    table = Table(header_style="bold", **output.table_styles())
     for column in ("ID", _("run.col.name"), _("run.col.backend"), _("run.col.status"), _("run.col.created"), "PID"):
         table.add_column(column)
     for record in records:
@@ -132,6 +132,44 @@ def run_logs(
         pass
 
 
+@app.command("attach", help=_("run.attach_help"))
+def run_attach(query: str = typer.Argument(..., help=_("run.arg.query"))) -> None:
+    record = _require_run(query)
+    handles = []
+    for stream in ("stdout", "stderr"):
+        path = runs.log_path(record, stream)
+        if path is not None:
+            handles.append((stream, path.open("r", encoding="utf-8", errors="replace")))
+    if not handles:
+        output.fail(_("run.no_logs"))
+        return
+    output.echo(f"[dim]{_('run.attached', id=record.run_id)}[/dim]")
+    try:
+        while True:
+            got_line = False
+            for stream, handle in handles:
+                while True:
+                    line = handle.readline()
+                    if not line:
+                        break
+                    got_line = True
+                    output.echo(f"[{stream}] {line.rstrip()}", markup=False)
+            if got_line:
+                continue
+            if runs.effective_status(record) in (
+                runs.TERMINAL_OK,
+                runs.TERMINAL_FAIL,
+                runs.STOPPED,
+            ):
+                break
+            time.sleep(0.25)
+    except KeyboardInterrupt:
+        output.echo(_("run.detached", id=record.run_id))
+    finally:
+        for _stream, handle in handles:
+            handle.close()
+
+
 @app.command("stop", help=_("run.stop_help"))
 def run_stop(query: str = typer.Argument(..., help=_("run.arg.query"))) -> None:
     record = _require_run(query)
@@ -197,7 +235,7 @@ def run_inspect(
     if not files:
         output.echo(f"  [dim]{_('run.no_files')}[/dim]")
         return
-    table = Table(header_style="bold")
+    table = Table(header_style="bold", **output.table_styles())
     table.add_column(_("run.col.file"))
     table.add_column(_("run.col.size"), justify="right")
     from ..utils.sysinfo import human_bytes

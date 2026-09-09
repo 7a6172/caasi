@@ -88,7 +88,7 @@ def setup_command(
 
     from rich.table import Table
 
-    table = Table(title=_("setup.title"), header_style="bold")
+    table = Table(header_style="bold", **output.table_styles())
     table.add_column(_("setup.col.component"))
     table.add_column(_("setup.col.status"))
     table.add_column(_("setup.col.detail"))

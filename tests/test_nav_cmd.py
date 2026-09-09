@@ -8,7 +8,7 @@ import yaml
 
 from caasi.cli.main import app
 from caasi.core import ros as ros_core
-from .test_ros_cmd import configure_runs, fake_ros, wait_for_run  # noqa: F401
+from .test_ros_cmd import configure_runs, fake_ros, no_ros2, wait_for_run  # noqa: F401
 
 
 def test_nav_status(runner, fake_ros):  # noqa: F811
@@ -118,3 +118,60 @@ def test_nav_test_fail_without_nodes(runner, fake_ros, monkeypatch):  # noqa: F8
     result = runner.invoke(app, ["nav", "test"])
     assert result.exit_code == 1
     assert "not ready" in result.output
+
+
+def test_nav_doctor(runner, fake_ros):  # noqa: F811
+    result = runner.invoke(app, ["nav", "doctor", "--json"])
+    # moveit_core / controller_manager / slam_toolbox are absent in the fake world.
+    assert result.exit_code == 1, result.output
+    data = json.loads(result.output)
+    assert data["group"] == "nav"
+    assert data["sections"] == ["ros", "robotics"]
+    assert data["exit_code"] == 1
+    assert {check["section"] for check in data["checks"]} == {"ros", "robotics"}
+    rows = {check["name"]: check for check in data["checks"]}
+    assert rows["Nav2"]["status"] == "ok"
+    assert rows["Nav2 params file"]["status"] == "ok"
+    assert rows["Nav2 params file"]["detail"].endswith("nav2_params.yaml")
+    assert rows["Lifecycle nodes"] == {
+        "section": "robotics",
+        "name": "Lifecycle nodes",
+        "status": "ok",
+        "detail": "/bt_navigator",
+        "hint": "",
+    }
+
+    result = runner.invoke(app, ["nav", "doctor"])
+    assert result.exit_code == 1
+    assert "Nav2 params file" in result.output
+    assert "Lifecycle nodes" in result.output
+
+
+def test_nav_doctor_warns_without_running_nodes(runner, fake_ros, monkeypatch):  # noqa: F811
+    monkeypatch.setattr(ros_core, "ros2_lines", lambda args, timeout=None: [])
+    result = runner.invoke(app, ["nav", "doctor", "--json"])
+    rows = {check["name"]: check for check in json.loads(result.output)["checks"]}
+    assert rows["Lifecycle nodes"]["status"] == "warn"
+    assert rows["Lifecycle nodes"]["detail"] == "No Nav2 nodes are running."
+    assert rows["Lifecycle nodes"]["hint"] == "Start the stack with 'caasi nav launch'."
+
+
+def test_nav_doctor_reports_a_missing_bringup(runner, fake_ros, monkeypatch):  # noqa: F811
+    monkeypatch.setattr(ros_core, "pkg_prefix", lambda name: None)
+    result = runner.invoke(app, ["nav", "doctor", "--json"])
+    assert result.exit_code == 1
+    rows = {check["name"]: check for check in json.loads(result.output)["checks"]}
+    assert rows["Nav2 params file"]["status"] == "fail"
+    assert "nav2_bringup" in rows["Nav2 params file"]["detail"]
+    assert rows["Nav2 params file"]["hint"].startswith("Install ros-$ROS_DISTRO-nav2-bringup")
+
+
+def test_nav_doctor_without_ros2(runner, tmp_path, monkeypatch):
+    no_ros2(monkeypatch, tmp_path)
+    result = runner.invoke(app, ["nav", "doctor", "--json"])
+    assert result.exit_code == 1
+    rows = {check["name"]: check for check in json.loads(result.output)["checks"]}
+    assert rows["Robotics stacks"]["status"] == "skip"
+    assert rows["Lifecycle nodes"]["status"] == "skip"
+    assert rows["Lifecycle nodes"]["detail"] == "skipped (ROS 2 CLI unavailable)"
+    assert rows["Nav2 params file"]["status"] == "skip"

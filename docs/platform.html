@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Physics &amp; Foundation Models — Caasi CLI Documentation</title>
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/theme.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html">Caa<span>si</span></a>
+  <span class="badge">v0.2.0</span>
+  <span class="tagline">Physics &amp; foundation models: physics · warp · groot · cosmos</span>
+  <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
+</header>
+<div class="layout">
+<aside id="sidebar"></aside>
+<main>
+
+<h1>Physics &amp; Foundation Models</h1>
+<p class="lead">
+Four Tier-4 groups wrap the physics engines and the foundation-model stacks — <code>physics</code>,
+<code>warp</code>, <code>groot</code> and <code>cosmos</code> — plus <code>scene reconstruct</code>,
+which hands a capture to a neural-reconstruction CLI. Caasi implements none of them: every command
+resolves an upstream tool from the catalog, starts it as a tracked run, and — when nothing is
+installed — fails honestly and names the config key that would point at it.
+</p>
+
+<table>
+  <thead><tr><th>Group</th><th>Catalog domain</th><th>Commands</th><th>What it delegates</th></tr></thead>
+  <tbody>
+    <tr><td><code>caasi physics</code></td><td><code>physics</code> — kind <code>sim</code>, tool <code>isaacsim</code></td><td>status · list · run · benchmark</td><td>PhysX, Newton, Warp, MuJoCo, Gazebo: a launcher choice plus <code>CAASI_PHYSICS_ENGINE</code>.</td></tr>
+    <tr><td><code>caasi warp</code></td><td><code>warp</code> — kind <code>python</code></td><td>status · test · benchmark</td><td>NVIDIA Warp: a device probe in a subprocess, your benchmark script as a run.</td></tr>
+    <tr><td><code>caasi groot</code></td><td><code>groot</code> — kind <code>python</code>, tool <code>groot</code></td><td>status · setup · run · train · evaluate</td><td>The Isaac GR00T repo's own installer, module and scripts, through its own interpreter.</td></tr>
+    <tr><td><code>caasi cosmos</code></td><td><code>cosmos</code> — kind <code>python</code></td><td>status · run · dataset</td><td>The Cosmos CLI (or <code>-m cosmos_predict1</code>) with your arguments forwarded verbatim.</td></tr>
+    <tr><td><code>caasi scene reconstruct</code></td><td>capability <code>nurec</code> of <code>usd</code></td><td>—</td><td>A NuRec CLI that turns a capture into OpenUSD.</td></tr>
+  </tbody>
+</table>
+
+<p>Shared conventions:</p>
+<ul>
+  <li>every command of the four groups takes <code>--json</code> (<code>scene reconstruct</code>
+      takes only <code>--dry-run</code>);</li>
+  <li>every verb that starts something takes <code>--dry-run</code>, and all of them but
+      <code>scene reconstruct</code> take <code>--name</code>; whatever Caasi does not recognize is
+      forwarded to the upstream tool — a trailing <code>--</code> is optional;</li>
+  <li>capability probes run in the order <em>package → binary → module → env → path</em>, first
+      hit wins, and a capability marked <strong>core</strong> reports
+      <span class="pill fail">missing</span> when absent while an optional one reports
+      <span class="pill">absent</span>;</li>
+  <li>every upstream name is catalog data:
+      <code>caasi config set catalog.&lt;domain&gt;.&lt;capability&gt;.&lt;field&gt; &lt;value&gt;</code>
+      (see <a href="configuration.html#config-cmd">caasi config</a>).</li>
+</ul>
+
+<h2 id="physics">caasi physics</h2>
+<p>The physics “interface” is deliberately thin: <strong>a launcher choice and one environment
+variable</strong>, nothing more. Caasi picks the engine the catalog resolves, exports
+<code>CAASI_PHYSICS_ENGINE=&lt;engine&gt;</code> to the run, and — when that engine ships its own
+launcher script — swaps it into the command's first position. PhysX runs through Isaac Sim's
+<code>python.sh</code>; Newton runs through the Newton launcher when one exists
+(<code>isaac-sim.newton.sh</code>, shipped next to <code>python.sh</code>). Five engines are
+known:</p>
+<table>
+  <thead><tr><th>Engine</th><th>Detected via</th><th>Core</th><th>Launcher used</th></tr></thead>
+  <tbody>
+    <tr><td><code>physx</code></td><td>paths <code>extsPhysics/*physx*</code>, <code>exts/omni.physx*</code> under the Isaac Sim root</td><td>yes</td><td>the experiment's own (Isaac Sim <code>python.sh</code>)</td></tr>
+    <tr><td><code>newton</code></td><td>path <code>isaac-sim.newton.sh</code>; modules <code>newton-physics</code>, <code>newton</code></td><td>no</td><td><code>isaac-sim.newton.sh</code> when it resolved as a <code>.sh</code> path</td></tr>
+    <tr><td><code>warp</code></td><td>modules <code>warp</code>, <code>warp-lang</code></td><td>no</td><td>the experiment's own</td></tr>
+    <tr><td><code>mujoco</code></td><td>module <code>mujoco</code></td><td>no</td><td>the experiment's own</td></tr>
+    <tr><td><code>gazebo</code></td><td>binaries <code>gz</code>, <code>gazebo</code></td><td>no</td><td>the experiment's own</td></tr>
+  </tbody>
+</table>
+
+<h3 id="physics-status">caasi physics status</h3>
+<pre class="syn"><code>caasi physics status [--json]</code></pre>
+<p>Reports the five engines plus the engine that would be used by default (<code>physics.default</code>,
+else <code>physx</code>). On a machine with no Isaac Sim this is the real output:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi physics status</span>
+<span class="out">Physics Engines
+  Engine         physx
+Capability  State    Detail
+physx       missing  not installed
+newton      absent   not installed
+warp        absent   not installed
+mujoco      absent   not installed
+gazebo      absent   not installed
+0 of 5 capabilities installed.</span></span></code></pre>
+<p>The core capability shows <span class="pill fail">missing</span>, the optional ones
+<span class="pill">absent</span>; exit <code>0</code> — this is a report, not a gate. The
+<code>Root</code> and <code>Launcher</code> rows appear only once Isaac Sim is registered in the
+<a href="configuration.html#tools">tool registry</a> (or <code>ISAACSIM_PATH</code> is set),
+because the <code>physics</code> domain is a <code>sim</code> domain and has no Python fallback:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi physics status</span>
+<span class="out">Physics Engines
+  Root           /opt/isaac-sim-6.0
+  Launcher       /opt/isaac-sim-6.0/python.sh
+  Engine         physx
+Capability  State      Detail
+physx       installed  /opt/isaac-sim-6.0/extsPhysics/omni.physx
+newton      installed  /opt/isaac-sim-6.0/isaac-sim.newton.sh
+warp        absent     not installed
+mujoco      absent     not installed
+gazebo      installed  /usr/bin/gz
+3 of 5 capabilities installed.</span></span></code></pre>
+<p>JSON carries the standard status payload (<code>domain</code>, <code>kind</code>,
+<code>tool</code>, <code>root</code>, <code>total</code>, <code>installed</code>,
+<code>capabilities</code>, <code>launcher</code>, <code>running</code>) plus this group's own
+<code>engine</code> key:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi physics status --json | jq '{domain, kind, tool, root, total, installed, engine, running}'</span>
+<span class="out">{
+  "domain": "physics",
+  "kind": "sim",
+  "tool": "isaacsim",
+  "root": null,
+  "total": 5,
+  "installed": 0,
+  "engine": "physx",
+  "running": []
+}</span></span></code></pre>
+
+<h3 id="physics-list">caasi physics list</h3>
+<pre class="syn"><code>caasi physics list [--json]</code></pre>
+<p>The engine table with the <em>how</em> of each detection — <code>package</code>,
+<code>binary</code>, <code>module</code>, <code>env</code> or <code>path</code> — and the default
+engine note:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi physics list</span>
+<span class="out">Engine  State  Found via  Detail
+physx   •      —          not installed
+newton  •      —          not installed
+warp    •      —          not installed
+mujoco  •      —          not installed
+gazebo  •      —          not installed
+Default engine: physx — change it with: caasi config set physics.default &lt;engine&gt;</span></span></code></pre>
+<p>On a machine with Isaac Sim registered the same command reports the <em>path</em> detections
+from the install tree (<code>physx</code> under <code>extsPhysics/</code>, <code>newton</code>
+through <code>isaac-sim.newton.sh</code>) and any <code>gz</code>/<code>gazebo</code> binary as
+<code>binary</code>. In the JSON payload the per-engine <code>launcher</code> is set only for an
+engine that resolves to a launcher script of its own — <code>newton</code>:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi physics list --json | jq '.default, .engines[1]'</span>
+<span class="out">"physx"
+{
+  "engine": "newton",
+  "installed": true,
+  "how": "path",
+  "value": "/opt/isaac-sim-6.0/isaac-sim.newton.sh",
+  "launcher": "/opt/isaac-sim-6.0/isaac-sim.newton.sh"
+}</span></span></code></pre>
+<p>JSON shape: <code>{"domain", "default", "engines": [{"engine", "installed", "how", "value",
+"launcher"}]}</code> — <code>how</code>, <code>value</code> and <code>launcher</code> are
+<code>null</code> for an engine that was not detected. Always exits <code>0</code>.</p>
+
+<h3 id="physics-run">caasi physics run</h3>
+<pre class="syn"><code>caasi physics run CONFIG_PATH [--engine KEY] [--name NAME] [--dry-run] [--json] [ARGS…]</code></pre>
+<table>
+  <thead><tr><th>Parameter</th><th>Kind</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>CONFIG_PATH</code></td><td>argument</td><td>path</td><td>required</td><td>Experiment YAML (<code>.yaml</code>/<code>.yml</code>) — the same file <a href="simulation.html#experiment"><code>sim run</code></a> consumes; extra arguments pass through to it.</td></tr>
+    <tr><td><code>--engine</code></td><td>option</td><td>str</td><td><code>physics.default</code>, else <code>physx</code></td><td>Physics engine to use: <code>physx</code>, <code>newton</code>, <code>warp</code>, <code>mujoco</code>, <code>gazebo</code>.</td></tr>
+    <tr><td><code>--name</code></td><td>option</td><td>str</td><td>experiment name</td><td>Name for the tracked run.</td></tr>
+    <tr><td><code>--dry-run</code></td><td>option</td><td>flag</td><td>off</td><td>Print the command without starting it.</td></tr>
+    <tr><td><code>--json</code></td><td>option</td><td>flag</td><td>off</td><td>Emit the run record as JSON.</td></tr>
+    <tr><td>trailing args</td><td>pass-through</td><td></td><td></td><td>Appended to the script's argv, after <code>--headless</code> when the experiment declares it.</td></tr>
+  </tbody>
+</table>
+<p>What happens, in order:</p>
+<ol>
+  <li>The <a href="simulation.html#experiment">experiment YAML</a> is loaded. A missing file is an
+      honest failure — even for <code>--dry-run</code>.</li>
+  <li>The engine is picked: <code>--engine</code> → <code>physics.default</code> →
+      <code>physx</code>. An unknown key or an engine that is not detected on this machine fails
+      and names the catalog key that would point at it.</li>
+  <li>The command is built from the experiment (backend <code>sim</code>, <code>lab</code> or
+      <code>python</code>) and the engine is applied: <code>CAASI_PHYSICS_ENGINE=&lt;engine&gt;</code>
+      in the environment, plus the engine's launcher in first position when it has one.</li>
+  <li><code>--dry-run</code> prints <code>command</code>, <code>cwd</code> and <code>engine</code>;
+      otherwise a detached run (<code>kind: run</code>, the experiment's backend) is started and
+      its manifest records the experiment path and the engine.</li>
+</ol>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi physics run /tmp/nope.yaml --dry-run</span>
+<span class="err">Error: experiment config not found: /tmp/nope.yaml
+exit code: 1</span>
+<span class="in">caasi physics run experiments/stack_cubes.yaml --dry-run</span>
+<span class="err">Error: 'physx' is not available (extsPhysics/*physx*, exts/omni.physx*). Install it, or point Caasi at the renamed upstream with `caasi config set catalog.physics.physx.paths [...]`.
+exit code: 1</span>
+<span class="in">caasi physics run experiments/stack_cubes.yaml --engine nope --dry-run</span>
+<span class="err">Error: Unknown physics engine 'nope'. Known: physx, newton, warp, mujoco, gazebo
+exit code: 1</span></span></code></pre>
+<p>On a machine where the engines resolve, the dry run shows the launcher that each engine
+brings — <code>python.sh</code> for PhysX, <code>isaac-sim.newton.sh</code> for Newton:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi physics run experiments/stack_cubes.yaml --dry-run</span>
+<span class="out">Dry run — nothing was started:
+  command: /opt/isaac-sim-6.0/python.sh /home/you/demo/scripts/stack_cubes.py --steps 1000 --headless
+  cwd:     /home/you/demo/experiments
+  engine:  physx (CAASI_PHYSICS_ENGINE)</span>
+<span class="in">caasi physics run experiments/stack_cubes.yaml --engine newton --dry-run</span>
+<span class="out">Dry run — nothing was started:
+  command: /opt/isaac-sim-6.0/isaac-sim.newton.sh /home/you/demo/scripts/stack_cubes.py --steps 1000 --headless
+  cwd:     /home/you/demo/experiments
+  engine:  newton (CAASI_PHYSICS_ENGINE)</span>
+<span class="in">caasi physics run experiments/stack_cubes.yaml --engine newton --name newton-stack</span>
+<span class="ok">Started run 20260907-211734-newton-stack.</span>
+<span class="dim">  Follow it with: caasi logs 20260907-211734-newton-stack -f</span></span></code></pre>
+
+<h3 id="physics-benchmark">caasi physics benchmark</h3>
+<pre class="syn"><code>caasi physics benchmark CONFIG_PATH [--engine KEY] [--name NAME] [--dry-run] [--json] [ARGS…]</code></pre>
+<p>Exactly <code>physics run</code> with <code>kind: benchmark</code> and one extra line after
+launch — the reminder that the run's stdout can be parsed for metrics
+(<a href="training.html#benchmark"><code>caasi benchmark report</code></a>):</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi physics benchmark experiments/stack_cubes.yaml --dry-run</span>
+<span class="err">Error: 'physx' is not available (extsPhysics/*physx*, exts/omni.physx*). Install it, or point Caasi at the renamed upstream with `caasi config set catalog.physics.physx.paths [...]`.
+exit code: 1</span>
+<span class="dim"># on a machine where the newton engine resolves:</span>
+<span class="in">caasi physics benchmark experiments/stack_cubes.yaml --engine newton --name newton-bench</span>
+<span class="ok">Started run 20260907-211734-newton-bench.</span>
+<span class="dim">  Follow it with: caasi logs 20260907-211734-newton-bench -f
+  When finished: caasi benchmark report 20260907-211734-newton-bench</span></span></code></pre>
+
+<div class="callout note">
+  <div class="c-title">Two config keys, one env var</div>
+  <p><code>caasi config set physics.default &lt;engine&gt;</code> changes the engine used when
+  <code>--engine</code> is absent. <code>caasi config set physics.engines.&lt;engine&gt;.launcher
+  &lt;path&gt;</code> overrides the launcher for one engine — an absolute path, or a path relative
+  to the Isaac Sim tool root, e.g. <code>caasi config set physics.engines.newton.launcher
+  isaac-sim.newton.sh</code>. A launcher that is not a file is ignored, and an engine detected
+  through a <code>.sh</code> path uses that path. The run's environment always carries
+  <code>CAASI_PHYSICS_ENGINE=&lt;engine&gt;</code> so the experiment can branch on it. Caasi never
+  imports a physics engine.</p>
+</div>
+
+<h3 id="physics-doctor">caasi doctor --component physics</h3>
+<p>The same probes as one <a href="environment.html#doctor">doctor</a> section,
+<em>Physics Engines</em>. <code>physx</code> is the only core capability, so it is the only row
+that can <code>fail</code> (exit <code>1</code>); every other engine is optional and is
+<code>skip</code>ped. The <code>warp</code> domain reports into this section too, which is why
+Warp appears here as well as under <code>caasi warp</code>:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi doctor --component physics</span>
+<span class="out">Environment Diagnostics
+
+Physics Engines</span>
+<span class="err">  ✗ PhysX — not found (extsPhysics/*physx*, exts/omni.physx*)
+      ↳ Install it, or point Caasi at the renamed upstream with `caasi config set
+catalog.physics.physx.paths [...]`.</span>
+<span class="out">  • Newton — not found (newton-physics, newton, isaac-sim.newton.sh)
+  • Warp — not found (warp, warp-lang)
+  • MuJoCo — not found (mujoco)
+  • Gazebo — not found (gz, gazebo)</span>
+<span class="err">✘ 1 issue(s) found, 0 warning(s). Run with --verbose for hints.
+exit code: 1</span>
+<span class="in">caasi doctor --component physics --json | jq '{summary, exit_code}'</span>
+<span class="out">{ "summary": { "fail": 1, "skip": 4 }, "exit_code": 1 }</span></span></code></pre>
+
+<h2 id="warp">caasi warp</h2>
+<p>One capability — <code>warp</code> in the <code>warp</code> domain, detected through the modules
+<code>warp</code> / <code>warp-lang</code>, and marked core. <strong>Caasi never imports Warp
+in-process</strong>: <code>test</code> runs a probe in a subprocess and <code>benchmark</code>
+starts your script as a detached run. The interpreter is the physics domain's launcher — Isaac
+Sim's <code>python.sh</code> when a tool is registered (Warp ships inside the Isaac Sim install,
+so its interpreter is the one that can see it), otherwise the CLI's own Python.</p>
+
+<h3 id="warp-status">caasi warp status</h3>
+<pre class="syn"><code>caasi warp status [--json]</code></pre>
+<p>The capability plus the interpreter that <code>test</code> and <code>benchmark</code> would
+use, as the <code>Launcher</code> row (JSON key <code>launcher</code>):</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi warp status</span>
+<span class="out">NVIDIA Warp
+  Launcher       /home/you/demo/.venv/bin/python3
+Capability  State    Detail
+warp        missing  not installed
+0 of 1 capabilities installed.</span>
+<span class="in">caasi warp status --json | jq '{domain, kind, tool, total, installed, launcher, running}'</span>
+<span class="out">{
+  "domain": "warp",
+  "kind": "python",
+  "tool": null,
+  "total": 1,
+  "installed": 0,
+  "launcher": "/home/you/demo/.venv/bin/python3",
+  "running": []
+}</span></span></code></pre>
+<p>With Isaac Sim registered the <code>Launcher</code> row becomes its <code>python.sh</code> —
+that is the interpreter Warp is looked for in.</p>
+
+<h3 id="warp-test">caasi warp test</h3>
+<pre class="syn"><code>caasi warp test [--json]</code></pre>
+<p>The real proof: a subprocess runs</p>
+<pre><code>import warp; warp.init(); print(warp.get_devices())</code></pre>
+<p>with a 120-second timeout (the first <code>init</code> can compile kernels). The capability is
+resolved first, so a machine without Warp gets an honest failure instead of a Python traceback:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi warp test</span>
+<span class="err">Error: No warp capability is installed. Install it, or point Caasi at the renamed upstream with `caasi config set catalog.warp.&lt;capability&gt;.&lt;field&gt; [...]`.
+exit code: 1</span>
+<span class="dim"># with Warp installed, the probe runs in a subprocess:</span>
+<span class="in">caasi warp test</span>
+<span class="ok">Warp initialized. Devices:
+  ['cpu', 'cuda:0']</span></span></code></pre>
+<p>If the probe itself fails, the last line of its stderr (or stdout) is reported:
+<code>Error: Warp test failed: &lt;detail&gt;</code> (exit <code>1</code>). JSON always carries the
+whole probe — <code>{"domain", "python", "returncode", "devices", "stdout", "stderr"}</code> —
+with <code>devices</code> being the non-empty stdout lines, and exits <code>0</code> only when the
+subprocess did:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi warp test --json | jq '{python, returncode, devices}'</span>
+<span class="out">{
+  "python": "/opt/isaac-sim-6.0/python.sh",
+  "returncode": 0,
+  "devices": ["['cpu', 'cuda:0']"]
+}</span></span></code></pre>
+
+<h3 id="warp-benchmark">caasi warp benchmark</h3>
+<pre class="syn"><code>caasi warp benchmark [--name NAME] [--dry-run] [--json] [ARGS…]</code></pre>
+<p>A pure pass-through: the command is <code>[&lt;resolved interpreter&gt;, ARGS…]</code>, so
+<code>ARGS</code> must say what to run — a script path or <code>-m &lt;module&gt;</code>. Caasi
+adds no Warp flags of its own, and with nothing to run it refuses rather than guessing:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi warp benchmark</span>
+<span class="err">Error: Nothing to benchmark — pass a script or `-m &lt;module&gt;`, e.g. `caasi warp benchmark bench.py`.
+exit code: 1</span>
+<span class="in">caasi warp benchmark benchmarks/warp_bench.py --dry-run</span>
+<span class="out">Dry run — nothing was launched:
+  command: /home/you/demo/.venv/bin/python3 benchmarks/warp_bench.py</span>
+<span class="in">caasi warp benchmark -m warp.tests.test_bench --dry-run</span>
+<span class="out">Dry run — nothing was launched:
+  command: /home/you/demo/.venv/bin/python3 -m warp.tests.test_bench</span></span></code></pre>
+<p>Launched for real it is a tracked run (<code>backend: python</code>, <code>kind:
+benchmark</code>, default name <code>warp</code>) with the benchmark-report reminder:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi warp benchmark benchmarks/warp_bench.py --name warp-bench</span>
+<span class="ok">Started run 20260907-211734-warp-bench.</span>
+<span class="dim">  Follow it with: caasi logs 20260907-211734-warp-bench -f
+  When finished: caasi benchmark report 20260907-211734-warp-bench</span>
+<span class="in">caasi run status warp-bench --json | jq '{id, backend, kind, status}'</span>
+<span class="out">{
+  "id": "20260907-211734-warp-bench",
+  "backend": "python",
+  "kind": "benchmark",
+  "status": "succeeded"
+}</span></span></code></pre>
+<p>Metrics are parsed from the run's stdout by
+<a href="training.html#benchmark"><code>caasi benchmark report</code></a> — Caasi does not
+interpret them itself.</p>
+
+<h2 id="groot">caasi groot</h2>
+<p>Isaac GR00T is a repository, not a package Caasi installs: everything here runs the repo's own
+installer, module and scripts <em>through the repo's own interpreter</em>. The repository is
+discovered as the catalog's <code>repo</code> capability — the <code>GR00T_PATH</code> environment
+variable first, then the common paths <code>~/Isaac-GR00T</code>, <code>~/gr00t</code> and
+<code>~/workspaces/Isaac-GR00T</code>, plus anything you add with <code>caasi config set
+catalog.groot.repo.paths [...]</code>. The <code>tools.groot</code> registry entry (falling back to
+<code>$GR00T_PATH</code>) supplies the root used for the repo's <code>python.sh</code> and for the
+relative script paths:</p>
+<table>
+  <thead><tr><th>Capability</th><th>Detected via</th><th>Core</th><th>Used by</th></tr></thead>
+  <tbody>
+    <tr><td><code>repo</code></td><td>env <code>GR00T_PATH</code>; paths <code>~/Isaac-GR00T</code>, <code>~/gr00t</code>, <code>~/workspaces/Isaac-GR00T</code></td><td>yes</td><td>every <code>groot</code> command</td></tr>
+    <tr><td><code>module</code></td><td>module <code>gr00t</code></td><td>no</td><td><code>groot run</code> (the default capability)</td></tr>
+    <tr><td><code>train</code></td><td>script <code>scripts/finetune.py</code> under the repo root</td><td>no</td><td><code>groot train</code>, <code>groot run --backend train</code></td></tr>
+    <tr><td><code>evaluate</code></td><td>script <code>scripts/eval.py</code> under the repo root</td><td>no</td><td><code>groot evaluate</code>, <code>groot run --backend evaluate</code></td></tr>
+    <tr><td><code>data</code></td><td>script <code>scripts/data.py</code> under the repo root</td><td>no</td><td><code>groot run --backend data</code></td></tr>
+  </tbody>
+</table>
+<p>The three script capabilities carry no probe of their own: they always read
+<span class="pill">absent</span> in <code>status</code>, but their resolved <code>script</code> path
+is what <code>train</code>/<code>evaluate</code> run. An upstream release that moves a file is a
+config edit — <code>caasi config set catalog.groot.train.script &lt;path&gt;</code>.</p>
+
+<h3 id="groot-status">caasi groot status</h3>
+<pre class="syn"><code>caasi groot status [--json]</code></pre>
+<p>Without the repo there is nothing to delegate to, and the core capability says so:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi groot status</span>
+<span class="out">Isaac GR00T
+  Launcher       /home/you/demo/.venv/bin/python3
+Capability  State    Detail
+repo        missing  not installed
+module      absent   not installed
+train       absent   not installed
+evaluate    absent   not installed
+data        absent   not installed
+0 of 5 capabilities installed.</span></span></code></pre>
+<p>With <code>GR00T_PATH</code> set (or the repo in one of the common paths) the <code>Root</code>
+row appears, the launcher is the repo's own <code>python.sh</code>, and the script capabilities
+resolve against that root:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi groot status</span>
+<span class="out">Isaac GR00T
+  Root           /home/you/Isaac-GR00T
+  Launcher       /home/you/Isaac-GR00T/python.sh
+Capability  State      Detail
+repo        installed  /home/you/Isaac-GR00T
+module      absent     not installed
+train       absent     not installed
+evaluate    absent     not installed
+data        absent     not installed
+1 of 5 capabilities installed.</span>
+<span class="in">caasi groot status --json | jq '.capabilities[2]'</span>
+<span class="out">{
+  "key": "train",
+  "label": "catalog.groot.train",
+  "group": null,
+  "core": false,
+  "found": false,
+  "how": null,
+  "value": null,
+  "launch": null,
+  "script": "/home/you/Isaac-GR00T/scripts/finetune.py",
+  "nodes": []
+}</span></span></code></pre>
+
+<h3 id="groot-setup">caasi groot setup</h3>
+<pre class="syn"><code>caasi groot setup [--execute] [--name NAME] [--dry-run] [--json]</code></pre>
+<table>
+  <thead><tr><th>Parameter</th><th>Kind</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>--execute</code></td><td>option</td><td>flag</td><td>off</td><td>Actually run the install steps as a tracked run.</td></tr>
+    <tr><td><code>--name</code></td><td>option</td><td>str</td><td><code>groot-setup</code></td><td>Name for the tracked run.</td></tr>
+    <tr><td><code>--dry-run</code></td><td>option</td><td>flag</td><td>off</td><td>Print the steps without executing them — it wins over <code>--execute</code>.</td></tr>
+    <tr><td><code>--json</code></td><td>option</td><td>flag</td><td>off</td><td>Emit machine-readable JSON output.</td></tr>
+  </tbody>
+</table>
+<p>The steps are the repo's own: <code>post_install.sh</code> when the repo has one, otherwise
+<code>&lt;repo python&gt; -m pip install -e .</code>. By default they are only
+<em>printed</em> — installing a foundation-model repo changes environments, so Caasi does not do it
+unless you say so:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi groot setup</span>
+<span class="err">Error: The GR00T repository was not found (GR00T_PATH, ~/Isaac-GR00T, ~/gr00t, ~/workspaces/Isaac-GR00T). Clone it, set GR00T_PATH, or point Caasi at it with `caasi config set catalog.groot.repo.paths [...]`.
+exit code: 1</span>
+<span class="dim"># with the repo present — GR00T_PATH set, or one of the common paths:</span>
+<span class="in">caasi groot setup</span>
+<span class="out">GR00T install steps (/home/you/Isaac-GR00T) — not executed:
+  command: /home/you/Isaac-GR00T/post_install.sh
+  cwd:     /home/you/Isaac-GR00T</span>
+<span class="dim">  Execute them as a tracked run with: caasi groot setup --execute</span>
+<span class="in">caasi groot setup --json</span>
+<span class="out">{
+  "domain": "groot",
+  "executed": false,
+  "command": ["/home/you/Isaac-GR00T/post_install.sh"],
+  "cwd": "/home/you/Isaac-GR00T"
+}</span>
+<span class="in">caasi groot setup --execute</span>
+<span class="ok">Started run 20260907-211738-groot-setup.</span>
+<span class="dim">  Follow it with: caasi logs 20260907-211738-groot-setup -f</span></span></code></pre>
+<p>The executed form is a detached run with <code>backend: python</code>, <code>kind: setup</code>
+and the repo root in its manifest, so <code>caasi run status latest</code> shows the command that
+ran.</p>
+
+<h3 id="groot-run">caasi groot run</h3>
+<pre class="syn"><code>caasi groot run [--backend|-b CAPABILITY] [--name NAME] [--dry-run] [--json] [ARGS…]</code></pre>
+<p>Delegates to one capability of the repo — <code>module</code> by default, or whatever
+<code>catalog.groot.default</code> names. <code>module</code> becomes
+<code>&lt;repo python&gt; -m gr00t ARGS…</code>; any other key becomes
+<code>&lt;repo python&gt; &lt;repo script&gt; ARGS…</code>. The working directory is always the
+repo root, and the run is recorded with <code>backend: groot</code>, <code>kind: groot</code>:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi groot run --dry-run</span>
+<span class="err">Error: The GR00T repository was not found (GR00T_PATH, ~/Isaac-GR00T, ~/gr00t, ~/workspaces/Isaac-GR00T). Clone it, set GR00T_PATH, or point Caasi at it with `caasi config set catalog.groot.repo.paths [...]`.
+exit code: 1</span>
+<span class="dim"># with the repo present but the gr00t module not installed:</span>
+<span class="in">caasi groot run --dry-run</span>
+<span class="err">Error: 'module' is not available (gr00t). Install it, or point Caasi at the renamed upstream with `caasi config set catalog.groot.module.modules [...]`.
+exit code: 1</span>
+<span class="dim"># a script capability needs no module — only the repo:</span>
+<span class="in">caasi groot run --backend train --dry-run</span>
+<span class="out">Dry run — nothing was launched:
+  command: /home/you/Isaac-GR00T/python.sh /home/you/Isaac-GR00T/scripts/finetune.py
+  cwd:     /home/you/Isaac-GR00T</span>
+<span class="in">caasi groot run --backend train --name finetune -- configs/a.yaml</span>
+<span class="ok">Started run 20260907-211734-finetune.</span>
+<span class="dim">  Follow it with: caasi logs 20260907-211734-finetune -f</span></span></code></pre>
+
+<h3 id="groot-train">caasi groot train / caasi groot evaluate</h3>
+<pre class="syn"><code>caasi groot train CONFIG_PATH [--name NAME] [--dry-run] [--json] [ARGS…]
+caasi groot evaluate CONFIG_PATH [--name NAME] [--dry-run] [--json] [ARGS…]</code></pre>
+<p>Both take the config file the GR00T script expects and hand it to the repo's own script through
+the repo's own interpreter — <code>scripts/finetune.py</code> for <code>train</code>,
+<code>scripts/eval.py</code> for <code>evaluate</code>, each path taken from the catalog. The
+config is checked before anything is resolved, the run is detached (<code>backend: groot</code>,
+<code>kind: train</code>/<code>evaluate</code>, default name = the config file's stem) and its
+manifest records the config path:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi groot train /tmp/nope.yaml --dry-run</span>
+<span class="err">Error: config not found: /tmp/nope.yaml
+exit code: 1</span>
+<span class="dim"># with the repo present:</span>
+<span class="in">caasi groot train configs/gr00t_finetune.yaml --dry-run</span>
+<span class="out">Dry run — nothing was launched:
+  command: /home/you/Isaac-GR00T/python.sh /home/you/Isaac-GR00T/scripts/finetune.py configs/gr00t_finetune.yaml
+  cwd:     /home/you/Isaac-GR00T</span>
+<span class="in">caasi groot evaluate configs/gr00t_eval.yaml --dry-run</span>
+<span class="out">Dry run — nothing was launched:
+  command: /home/you/Isaac-GR00T/python.sh /home/you/Isaac-GR00T/scripts/eval.py configs/gr00t_eval.yaml
+  cwd:     /home/you/Isaac-GR00T</span>
+<span class="in">caasi groot train configs/gr00t_finetune.yaml --name finetune-v2</span>
+<span class="ok">Started run 20260907-211734-finetune-v2.</span>
+<span class="dim">  Follow it with: caasi logs 20260907-211734-finetune-v2 -f</span></span></code></pre>
+<p>A script the repo does not have (or has moved) is reported with the exact key that fixes it:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi groot train configs/gr00t_finetune.yaml --dry-run</span>
+<span class="err">Error: /home/you/Isaac-GR00T has no scripts/finetune.py. Fix the path with: caasi config set catalog.groot.train.script &lt;path&gt;
+exit code: 1</span></span></code></pre>
+
+<div class="callout tip">
+  <div class="c-title">Whose interpreter?</div>
+  <p>GR00T ships a <code>python.sh</code> of its own, and that is what runs its scripts: the
+  <code>tools.groot</code> registry entry first, then <code>$GR00T_PATH</code>, then this process'
+  Python as a last resort. Nothing is installed into the environment Caasi itself runs in.</p>
+</div>
+
+<h2 id="cosmos">caasi cosmos</h2>
+<p>The lowest-priority group and the thinnest one: <code>caasi cosmos</code> resolves a Cosmos
+entry point and forwards your arguments to it verbatim. Two capabilities, neither core —
+<code>module</code> (<code>cosmos_predict1</code>, <code>cosmos1</code>) and <code>cli</code>
+(binaries <code>cosmos</code>, <code>ngc</code>). A CLI found as a binary wins and is run directly
+(the run's <code>backend</code> is the binary's basename); otherwise the module is run as
+<code>&lt;caasi python&gt; -m &lt;module&gt;</code>. Caasi knows no Cosmos flags and invents none.</p>
+
+<h3 id="cosmos-status">caasi cosmos status</h3>
+<pre class="syn"><code>caasi cosmos status [--json]</code></pre>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi cosmos status</span>
+<span class="out">NVIDIA Cosmos
+  Launcher       /home/you/demo/.venv/bin/python3
+Capability  State   Detail
+module      absent  not installed
+cli         absent  not installed
+0 of 2 capabilities installed.</span>
+<span class="in">caasi cosmos status --json | jq '{domain, kind, total, installed, launcher, running}'</span>
+<span class="out">{
+  "domain": "cosmos",
+  "kind": "python",
+  "total": 2,
+  "installed": 0,
+  "launcher": "/home/you/demo/.venv/bin/python3",
+  "running": []
+}</span></span></code></pre>
+
+<h3 id="cosmos-run">caasi cosmos run</h3>
+<pre class="syn"><code>caasi cosmos run [--name NAME] [--dry-run] [--json] [ARGS…]</code></pre>
+<p>With nothing to forward there is nothing to delegate, and with nothing installed the failure
+names the key that would point at a CLI:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi cosmos run</span>
+<span class="err">Error: Nothing to forward — pass the arguments for the Cosmos CLI, e.g. `caasi cosmos run &lt;args&gt;`.
+exit code: 1</span>
+<span class="in">caasi cosmos run predict --dry-run</span>
+<span class="err">Error: No cosmos capability is installed. Install it, or point Caasi at the renamed upstream with `caasi config set catalog.cosmos.cli.binaries [...]`.
+exit code: 1</span></span></code></pre>
+<p>Once a CLI resolves, the arguments are the command — <code>backend</code> is the binary's
+basename and <code>kind</code> is <code>cosmos</code> (default run name <code>cosmos</code>):</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi cosmos run predict --checkpoint /models/cosmos_predict1.pt --dry-run</span>
+<span class="out">Dry run — nothing was launched:
+  command: /usr/local/bin/cosmos predict --checkpoint /models/cosmos_predict1.pt</span>
+<span class="in">caasi cosmos run predict --checkpoint /models/cosmos_predict1.pt --name cosmos-predict</span>
+<span class="ok">Started run 20260907-211737-cosmos-predict.</span>
+<span class="dim">  Follow it with: caasi logs 20260907-211737-cosmos-predict -f</span></span></code></pre>
+
+<h3 id="cosmos-dataset">caasi cosmos dataset</h3>
+<pre class="syn"><code>caasi cosmos dataset [--name NAME] [--dry-run] [--json] [ARGS…]</code></pre>
+<p>The same pass-through for Cosmos dataset work — <code>kind: dataset</code>, default run name
+<code>cosmos-dataset</code>, and the same two honest failures:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi cosmos dataset</span>
+<span class="err">Error: Nothing to forward — pass the arguments for the Cosmos CLI, e.g. `caasi cosmos dataset &lt;args&gt;`.
+exit code: 1</span>
+<span class="in">caasi cosmos dataset prepare --input /data/raw --dry-run</span>
+<span class="out">Dry run — nothing was launched:
+  command: /usr/local/bin/cosmos prepare --input /data/raw</span></span></code></pre>
+
+<h2 id="scene-reconstruct">caasi scene reconstruct</h2>
+<p>Neural reconstruction is delegated, like everything else on this page: <code>scene
+reconstruct</code> resolves the <code>nurec</code> capability of the <code>usd</code> catalog
+domain (binary <code>nurec</code>) and hands it a capture — a <code>ros2 bag</code> directory
+recorded by <code>caasi scene capture</code>, or any
+<a href="data.html#dataset">dataset</a> path. Caasi implements no reconstruction and reads no
+frames; the run is tracked like any other (<code>backend: nurec</code>, <code>kind:
+reconstruct</code>).</p>
+
+<h3 id="scene-reconstruct-usage">Usage</h3>
+<pre class="syn"><code>caasi scene reconstruct CAPTURE [--dry-run] [ARGS…]</code></pre>
+<table>
+  <thead><tr><th>Parameter</th><th>Kind</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>CAPTURE</code></td><td>argument</td><td>path</td><td>required</td><td>Capture to reconstruct (ros2 bag directory or dataset path).</td></tr>
+    <tr><td><code>--dry-run</code></td><td>option</td><td>flag</td><td>off</td><td>Show the command without starting a run.</td></tr>
+    <tr><td>trailing args</td><td>pass-through</td><td></td><td></td><td>Appended after the capture path, for the NuRec CLI to interpret.</td></tr>
+  </tbody>
+</table>
+<p>The two gates run in order — the capture must exist, then a reconstruction tool must resolve —
+and on a machine without NuRec this is the real output:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi scene reconstruct /tmp/nope --dry-run</span>
+<span class="err">Error: Capture '/tmp/nope' not found.
+exit code: 1</span>
+<span class="in">caasi scene reconstruct datasets/kitchen-capture --dry-run</span>
+<span class="err">Error: No neural reconstruction tool detected (nurec). Install NuRec, or point Caasi at its CLI: caasi config set catalog.usd.nurec.binaries "[&lt;cli&gt;]".
+exit code: 1</span></span></code></pre>
+<p>With a CLI resolved — its own, or one you named with <code>caasi config set
+catalog.usd.nurec.binaries "[&lt;cli&gt;]"</code> — the command is
+<code>[&lt;nurec&gt;, &lt;capture&gt;, ARGS…]</code>:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi scene reconstruct datasets/kitchen-capture --dry-run</span>
+<span class="out">Dry run — nothing was started:
+  command: /usr/local/bin/nurec datasets/kitchen-capture</span>
+<span class="in">caasi scene reconstruct datasets/kitchen-capture --output kitchen.usd</span>
+<span class="ok">Reconstruction started for datasets/kitchen-capture.</span>
+<span class="dim">  Follow it with: caasi logs 20260907-213012-kitchen-capture -f</span></span></code></pre>
+<p>The run is named after the capture's directory name, and its manifest carries the capture path,
+so <a href="runs.html#run"><code>caasi run list</code></a> shows which capture produced which
+reconstruction. Note that <code>--output</code> above is not a Caasi option: it is forwarded to the
+NuRec CLI, which decides what it means.</p>
+
+<h3 id="doctor-platform">caasi doctor --component platform</h3>
+<p>One <a href="environment.html#doctor">doctor</a> section — <em>Foundation Models &amp;
+Teleop</em> — covers GR00T, Cosmos, NuRec and the two teleop stacks. The GR00T
+<code>repo</code> capability is the only core row here, so it is the only one that fails the check;
+the packages, the CLIs and NuRec are optional and are skipped:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi doctor --component platform</span>
+<span class="out">Environment Diagnostics
+
+Foundation Models &amp; Teleop</span>
+<span class="err">  ✗ GR00T repository — not found (GR00T_PATH, ~/Isaac-GR00T, ~/gr00t, ~/workspaces/Isaac-GR00T)
+      ↳ Install it, or point Caasi at the renamed upstream with `caasi config set
+catalog.groot.repo.env [...]`.</span>
+<span class="out">  • gr00t package — not found (gr00t)
+  • Cosmos package — not found (cosmos_predict1, cosmos1)
+  • Cosmos CLI — not found (cosmos, ngc)
+  • NuRec (neural reconstruction) — not found (nurec)</span>
+<span class="err">  ✗ Keyboard teleop — not found (teleop_twist_keyboard)
+      ↳ Install it, or point Caasi at the renamed upstream with `caasi config set
+catalog.teleop.keyboard.packages [...]`.</span>
+<span class="out">  • Joystick teleop — not found (teleop_twist_joy, joy)</span>
+<span class="err">✘ 2 issue(s) found, 0 warning(s). Run with --verbose for hints.
+exit code: 1</span>
+<span class="in">caasi doctor --component platform --json | jq '[.checks[] | {name, status}]'</span>
+<span class="out">[ { "name": "GR00T repository", "status": "fail" },
+  { "name": "gr00t package", "status": "skip" },
+  { "name": "Cosmos package", "status": "skip" },
+  { "name": "Cosmos CLI", "status": "skip" },
+  { "name": "NuRec (neural reconstruction)", "status": "skip" },
+  { "name": "Keyboard teleop", "status": "fail" },
+  { "name": "Joystick teleop", "status": "skip" } ]</span></span></code></pre>
+<p>A resolved row reads <code>✓ NuRec (neural reconstruction) — /usr/local/bin/nurec</code> and
+carries the hint <code>detected via binary</code> (shown by <code>--verbose</code>). The two
+<a href="synthetic.html#teleop">teleop</a> rows need the <code>ros2</code> CLI: on a machine
+without one they report <code>• Keyboard teleop — skipped (ROS 2 CLI unavailable)</code> with the
+hint <code>Install ROS 2 to enable Nav2 / MoveIt 2 / ros2_control checks.</code> — they never fail
+for a missing ROS 2.</p>
+
+<div class="callout note">
+  <div class="c-title">Nothing here is Caasi's own</div>
+  <p>No engine, no kernel, no model and no reconstruction is implemented by Caasi. What it adds is
+  detection (the catalog), a launcher choice, tracked runs with logs, and honest failures that name
+  the config key to fix. Every name on this page — engine keys, package names, binaries, script
+  paths — is catalog data: <code>caasi config catalog physics</code>,
+  <code>caasi config catalog groot</code>, <code>caasi config catalog cosmos</code> and
+  <code>caasi config catalog usd</code> print it.</p>
+</div>
+
+<div class="page-nav">
+  <a class="prev" href="synthetic.html"><span class="pn-label">Previous</span><span class="pn-title">← Synthetic Data &amp; Teleop</span></a>
+  <a class="next" href="native.html"><span class="pn-label">Next</span><span class="pn-title">Native &amp; Shell →</span></a>
+</div>
+
+<footer class="doc-footer">
+  Caasi CLI 0.2.0 — these pages live in <code>docs/</code> and need no build step.
+  Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
+</footer>
+</main>
+</div>
+<script src="assets/copy.js"></script>
+<script src="assets/sidebar.js"></script>
+</body>
+</html>

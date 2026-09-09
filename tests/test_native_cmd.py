@@ -102,3 +102,24 @@ def test_shell_command_json(fake_sim, runner):
     data = json.loads(result.output)
     assert data["returncode"] == 0
     assert "hi" in data["stdout"]
+
+
+def test_shell_ros_sources_ros_env(fake_sim, runner, monkeypatch):
+    import os
+
+    from caasi.cli import shell_cmd
+
+    def fake_sourced_env(distro=None):
+        return {**os.environ, "CAASI_ROS_MARKER": "sourced"}
+
+    monkeypatch.setattr(shell_cmd.rosenv, "sourced_env", fake_sourced_env)
+    result = runner.invoke(
+        app, ["shell", "--ros", "-c", "echo $CAASI_ROS_MARKER $ISAACSIM_PATH"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "sourced" in result.output
+    assert "isaac-sim" in result.output
+
+    result = runner.invoke(app, ["shell", "-c", "echo ${CAASI_ROS_MARKER:-unset}"])
+    assert result.exit_code == 0, result.output
+    assert "unset" in result.output

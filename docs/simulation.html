@@ -10,7 +10,7 @@
 <body>
 <header class="topbar">
   <a class="brand" href="index.html">Caa<span>si</span></a>
-  <span class="badge">v0.1.0</span>
+  <span class="badge">v0.2.0</span>
   <span class="tagline">Simulation: sim · lab · experiment YAML</span>
   <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
 </header>
@@ -72,14 +72,32 @@ cwd: null                   # optional; working directory (default: the YAML's d
   'caasi config set tools.isaacsim...' or use backend 'python'.</code> (exit 1)</p>
 </div>
 
+<h2 id="sim">caasi sim</h2>
+<table>
+  <thead><tr><th>Subcommand</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>run</code></td><td>Run an experiment configuration.</td></tr>
+    <tr><td><code>headless</code></td><td>Run an experiment with <code>--headless --no-window</code> forced.</td></tr>
+    <tr><td><code>status</code></td><td>Simulation backend status.</td></tr>
+    <tr><td><code>check</code></td><td>Check resources before launching.</td></tr>
+    <tr><td><code>logs</code></td><td>Show logs of a simulation run.</td></tr>
+    <tr><td><code>extensions</code></td><td>List extensions in the Isaac Sim install tree.</td></tr>
+    <tr><td><code>stop</code> / <code>pause</code> / <code>resume</code></td><td>Stop, pause or resume a running simulation.</td></tr>
+  </tbody>
+</table>
+<p>Descriptions are the CLI's own — <code>caasi sim --help</code> prints this list. The launchers
+take the <a href="#experiment">experiment YAML</a> above and produce ordinary
+<a href="runs.html">tracked runs</a>; the rest operate on those runs or on the install itself.</p>
+
 <h2 id="sim-run">caasi sim run</h2>
-<pre class="syn"><code>caasi sim run CONFIG_PATH [--name NAME] [--dry-run] [-- SCRIPT_ARGS…]</code></pre>
+<pre class="syn"><code>caasi sim run CONFIG_PATH [--name NAME] [--dry-run] [--json] [-- SCRIPT_ARGS…]</code></pre>
 <table>
   <thead><tr><th>Parameter</th><th>Kind</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
   <tbody>
     <tr><td><code>CONFIG_PATH</code></td><td>argument</td><td>path</td><td>required</td><td>The experiment YAML.</td></tr>
     <tr><td><code>--name</code></td><td>option</td><td>str</td><td>experiment name</td><td>Override the run name (and thus the run id).</td></tr>
     <tr><td><code>--dry-run</code></td><td>option</td><td>flag</td><td>off</td><td>Print command, cwd and env without starting anything.</td></tr>
+    <tr><td><code>--json</code></td><td>option</td><td>flag</td><td>off</td><td>Print the run record instead of the two-line summary.</td></tr>
     <tr><td>trailing args</td><td>pass-through</td><td></td><td></td><td>Anything Caasi doesn't recognize is appended verbatim to the script's argv (after the YAML's <code>args</code>).</td></tr>
   </tbody>
 </table>
@@ -88,9 +106,9 @@ cwd: null                   # optional; working directory (default: the YAML's d
 <pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi sim run experiments/wave.yaml --dry-run</span>
 <span class="out">Dry run — nothing was started:
   command: /opt/isaac-sim-6.0/python.sh /home/you/demo/scripts/wave.py --steps 10000
-  cwd: /home/you/demo/experiments
-  env: ISAACSIM_PATH=/opt/isaac-sim-6.0
-  env: MY_ASSET_ROOT=/data/assets</span></span></code></pre>
+  cwd:     /home/you/demo/experiments
+  env:     ISAACSIM_PATH=/opt/isaac-sim-6.0
+  env:     MY_ASSET_ROOT=/data/assets</span></span></code></pre>
 
 <h3>Example — launch and follow</h3>
 <pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi sim run experiments/wave.yaml -- --seed 7</span>
@@ -102,11 +120,31 @@ cwd: null                   # optional; working directory (default: the YAML's d
 <code>kind: experiment</code>, and <code>extra: {experiment, headless}</code> in the manifest.</p>
 <div class="callout note">
   <div class="c-title">JSON</div>
-  <p><code>sim run</code> has no local <code>--json</code>; use the global flag —
-  <code>caasi --json sim run exp.yaml</code> prints the full run record. And remember: the command's
+  <p><code>--json</code> (or the global flag — <code>caasi --json sim run exp.yaml</code>) prints
+  the full run record instead of the summary; it has no effect together with <code>--dry-run</code>,
+  which always prints the human-readable command. And remember: the command's
   exit code reflects the <em>launch</em>, not the simulation. Check the outcome later with
   <code>caasi run status</code>.</p>
 </div>
+
+<h3 id="sim-headless">caasi sim headless</h3>
+<pre class="syn"><code>caasi sim headless CONFIG_PATH [--name NAME] [--dry-run] [--json] [-- SCRIPT_ARGS…]</code></pre>
+<p><code>sim run</code> with <code>--headless --no-window</code> forced onto the script's argv —
+same argument, same options, same tracked run — whatever the YAML's <code>headless:</code> key
+says. For configurations written for a windowed session that you now launch on a machine with no
+display.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi sim headless experiments/wave.yaml --dry-run</span>
+<span class="out">Dry run — nothing was started:
+  command: /opt/isaac-sim-6.0/python.sh /home/you/demo/scripts/wave.py --steps 10000 --headless --no-window
+  cwd:     /home/you/demo/experiments
+  env:     ISAACSIM_PATH=/opt/isaac-sim-6.0
+  env:     MY_ASSET_ROOT=/data/assets</span>
+<span class="in">caasi sim headless experiments/wave.yaml -- --seed 7</span>
+<span class="ok">Run 20260905-142301-wave started in the background.</span>
+<span class="dim">  Follow it with: caasi logs 20260905-142301-wave -f</span></span></code></pre>
+<p>The two flags land after the YAML's <code>args</code> and before your trailing pass-through
+args. The run is recorded with <code>kind: experiment</code>, the YAML's <code>backend</code> and
+<code>extra: {experiment, headless: true}</code>.</p>
 
 <h2 id="sim-control">Status, checks and lifecycle</h2>
 
@@ -116,9 +154,8 @@ cwd: null                   # optional; working directory (default: the YAML's d
 currently active (<code>running</code>/<code>paused</code>)?</p>
 <pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi sim status</span>
 <span class="ok">✓ Isaac Sim 6.0 → /opt/isaac-sim-6.0</span>
-<span class="out">     Active Simulation Runs
-  ID                     Name  Status   PID
-  20260905-142301-wave   wave  running  48213</span>
+<span class="out">ID                    Name  Status   PID
+20260905-142301-wave  wave  running  48213</span>
 <span class="in">caasi sim status --json | jq '.backend'</span>
 <span class="out">{ "tool": "isaacsim", "version": "6.0", "path": "/opt/isaac-sim-6.0", "python": null }</span></span></code></pre>
 <p>Always exits <code>0</code> — an unregistered backend is reported
@@ -141,6 +178,48 @@ for simulation — <code>isaac</code>, <code>nvidia</code>, <code>hardware</code
 <p>Exit <code>1</code> if any check fails (warnings don't fail), else <code>0</code> — made for
 <code>&amp;&amp;</code> chains.</p>
 
+<h3 id="sim-logs">caasi sim logs</h3>
+<pre class="syn"><code>caasi sim logs QUERY [--lines|-n N] [--follow|-f] [--stream|-s stdout|stderr]</code></pre>
+<p><a href="runs.html#logs"><code>caasi run logs</code></a> restricted to simulation runs — same
+options and defaults (<code>-n 50</code>, <code>-s stdout</code>), same follow behaviour. A run
+started by another backend is rejected instead of silently shown:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi sim logs latest -n 2</span>
+<span class="out">[14:41:07] step 10000/10000 fps 244.1
+[14:41:07] done.</span>
+<span class="in">caasi sim logs ant</span>
+<span class="err">Error: Run has backend 'lab', not 'sim'; use: caasi run logs &lt;query&gt;</span></span></code></pre>
+<p>Exit <code>1</code> for an unknown run, a non-<code>sim</code> backend, an unknown
+<code>--stream</code> value or a missing log file. To watch both streams at once, use
+<a href="runs.html#run-attach"><code>caasi run attach</code></a>.</p>
+
+<h3 id="sim-extensions">caasi sim extensions</h3>
+<pre class="syn"><code>caasi sim extensions [--enabled] [--user] [--json]</code></pre>
+<p>An inventory of the Isaac Sim install tree — no simulator is started and nothing is imported.
+Caasi walks <code>exts</code>, <code>extscache</code>, <code>extsInternal</code>,
+<code>extsUser</code>, <code>extsDeprecated</code> and <code>extsPhysics</code> looking for
+<code>&lt;extension&gt;/config/extension.toml</code>, and reports the extension name (the
+<code>[package] name</code> key, else the directory name), the directory it came from, and whether
+<code>[core] preload</code> is <code>true</code>.</p>
+<table>
+  <thead><tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>--enabled</code></td><td>flag</td><td>off</td><td>Only list extensions preloaded (enabled) at startup.</td></tr>
+    <tr><td><code>--user</code></td><td>flag</td><td>off</td><td>Only scan the <code>extsUser</code> directory.</td></tr>
+    <tr><td><code>--json</code></td><td>flag</td><td>off</td><td>Array of <code>{name, source, enabled}</code> objects.</td></tr>
+  </tbody>
+</table>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi sim extensions</span>
+<span class="out">Extension                 Source    Enabled
+omni.anim.graph.core      exts      —
+omni.kit.viewport.window  exts      ✓
+caasi.custom.recorder     extsUser  —</span>
+<span class="in">caasi sim extensions --enabled --json</span>
+<span class="out">[ { "name": "omni.kit.viewport.window", "source": "exts", "enabled": true } ]</span></span></code></pre>
+<p>This one does need a registered install: without one it fails with <code>Error: Isaac Sim is not
+registered (caasi config set tools.isaacsim...).</code> (exit <code>1</code>), where
+<code>sim status</code> only reports it. A tree with no extension manifests prints
+<code>No extensions found.</code> and exits <code>0</code>.</p>
+
 <h3 id="sim-lifecycle">caasi sim stop / pause / resume</h3>
 <pre class="syn"><code>caasi sim stop   QUERY
 caasi sim pause  QUERY
@@ -155,6 +234,38 @@ signals, same messages, same exit codes). Convenience, nothing more:</p>
 Run 20260905-142301-wave stopped.</span></span></code></pre>
 
 <h2 id="lab">caasi lab</h2>
+<p>The same <a href="#experiment">experiment YAML</a>, launched through the Isaac Lab toolchain.
+Caasi delegates — it never imports Isaac Lab; it resolves the launcher, wires the environment and
+hands the process off as a detached <a href="runs.html">run</a>.</p>
+<table>
+  <thead><tr><th>Subcommand</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>status</code></td><td>Isaac Lab environment status.</td></tr>
+    <tr><td><code>run</code></td><td>Run an experiment configuration with the lab backend.</td></tr>
+    <tr><td><code>train</code></td><td>Train a policy as a tracked background run.</td></tr>
+    <tr><td><code>play</code></td><td>Play a trained policy (<code>isaaclab.sh -p &lt;play script&gt;</code>).</td></tr>
+    <tr><td><code>evaluate</code></td><td>Evaluate a trained policy checkpoint.</td></tr>
+  </tbody>
+</table>
+<p>Descriptions are the CLI's own — <code>caasi lab --help</code> prints this list. The four
+launchers share their plumbing:</p>
+<ul>
+  <li>The command is built exactly as the <a href="#experiment">backend table</a> describes for
+      <code>backend: lab</code>: the registered <code>tools.isaaclab</code> python when it has one,
+      else <code>&lt;ISAACLAB_PATH&gt;/isaaclab.sh -p &lt;script&gt;</code>, else
+      <code>python3</code>. Without a registered install: <code>Error: Backend 'lab' needs a
+      registered isaaclab install. Register one with 'caasi config set tools.isaaclab...' or use
+      backend 'python'.</code> (exit 1)</li>
+  <li><code>backend: lab</code> in the YAML is the normal case. Another value still launches, but
+      prints a yellow <code>Note: experiment backend is 'sim', not 'lab'.</code> first — the run's
+      <code>backend</code> always comes from the YAML.</li>
+  <li>All four accept <code>--name</code>, <code>--dry-run</code>, <code>--json</code> and trailing
+      pass-through args; <code>--dry-run</code> prints the command and cwd (no <code>env:</code>
+      lines, unlike <code>sim run</code>) and <code>--json</code> prints the full run record.</li>
+  <li>The run's <code>kind</code> comes from the subcommand — <code>experiment</code>,
+      <code>train</code>, <code>play</code>, <code>evaluate</code> — and its manifest carries the
+      experiment path in <code>extra</code>, so <code>caasi run list</code> tells them apart.</li>
+</ul>
 
 <h3 id="lab-status">caasi lab status</h3>
 <pre class="syn"><code>caasi lab status [--json]</code></pre>
@@ -180,20 +291,64 @@ bridge.</p>
 status is <code>fail</code> with an install hint — but the exit code is still <code>0</code>
 (this is a report, not a gate; use <code>caasi setup</code> or <code>doctor</code> for gating).</p>
 
-<h3>Running Isaac Lab experiments</h3>
-<p>There is no separate “lab run” — use <code>sim run</code> with <code>backend: lab</code>:</p>
+<h3 id="lab-run">caasi lab run</h3>
+<pre class="syn"><code>caasi lab run CONFIG_PATH [--name NAME] [--dry-run] [--json] [-- SCRIPT_ARGS…]</code></pre>
+<p>Starts the config's <code>script</code> as a tracked run with <code>kind: experiment</code> and
+<code>extra: {experiment, headless}</code>:</p>
 <pre class="term"><code><span class="t-head">experiments/ant.yaml</span><span class="t-body"><span class="out">name: ant-train
 backend: lab
 script: scripts/train_ant.py
 headless: true</span></span></code></pre>
-<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi sim run experiments/ant.yaml --dry-run</span>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi lab run experiments/ant.yaml --dry-run</span>
 <span class="out">Dry run — nothing was started:
-  command: /opt/IsaacLab/isaaclab.sh -p /opt/IsaacLab/scripts/train_ant.py
-  cwd: /home/you/demo/experiments</span>
-<span class="warn">Note: experiment backend is 'lab', not 'sim'.</span></span></code></pre>
-<p>(The yellow note reminds you that <code>sim run</code> launched a <code>lab</code>-backend
-experiment; the run is tracked with <code>backend: lab</code> and appears in
-<code>caasi run list</code> like everything else.)</p>
+  command: /opt/IsaacLab/isaaclab.sh -p /home/you/demo/scripts/train_ant.py
+  cwd:     /home/you/demo/experiments</span>
+<span class="in">caasi lab run experiments/ant.yaml</span>
+<span class="ok">Run 20260905-151207-ant-train started in the background.</span>
+<span class="dim">  Follow it with: caasi logs 20260905-151207-ant-train -f</span></span></code></pre>
+<p><code>caasi sim run experiments/ant.yaml</code> launches the very same file — it only adds a
+yellow <code>Note: experiment backend is 'lab', not 'sim'.</code> to point out the mismatch. Either
+way the run is tracked with <code>backend: lab</code> and appears in <code>caasi run list</code>
+like everything else.</p>
+
+<h3 id="lab-train">caasi lab train</h3>
+<pre class="syn"><code>caasi lab train CONFIG_PATH [--steps N] [--envs N] [--resume PATH] [--seed N]
+              [--device TEXT] [--name NAME] [--dry-run] [--json] [-- SCRIPT_ARGS…]</code></pre>
+<p>The Lab-side twin of <a href="training.html#train"><code>caasi train</code></a>, with the same
+argv translation: <code>--steps</code>, <code>--envs</code>, <code>--resume</code>,
+<code>--seed</code>, <code>--device</code>, then <code>--headless</code> when the YAML is headless,
+then your trailing args. It adds <code>--name</code> and <code>--json</code>, and records
+<code>kind: train</code> with <code>extra: {experiment, steps, envs}</code>:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi lab train experiments/ant.yaml --steps 500000 --envs 4096 --device cuda:0 --dry-run</span>
+<span class="out">Dry run — nothing was started:
+  command: /opt/IsaacLab/isaaclab.sh -p /home/you/demo/scripts/train_ant.py --steps 500000 --envs 4096 --device cuda:0 --headless
+  cwd:     /home/you/demo/experiments</span>
+<span class="in">caasi lab train experiments/ant.yaml --steps 500000 --envs 4096 --json | jq '.kind, .status'</span>
+<span class="out">"train"
+"running"</span></span></code></pre>
+
+<h3 id="lab-play">caasi lab play / evaluate</h3>
+<pre class="syn"><code>caasi lab play     CONFIG_PATH [--checkpoint PATH] [--name NAME] [--dry-run] [--json] [-- SCRIPT_ARGS…]
+caasi lab evaluate CONFIG_PATH [--checkpoint PATH] [--name NAME] [--dry-run] [--json] [-- SCRIPT_ARGS…]</code></pre>
+<p>Both run a policy instead of training one, and both take their script from optional extra keys
+in the same YAML: <code>play</code> uses <code>play_script</code>, <code>evaluate</code> uses
+<code>evaluate_script</code> and falls back to <code>play_script</code>; without them the plain
+<code>script</code> is used. <code>--checkpoint PATH</code> is handed to that script as
+<code>--checkpoint PATH</code>, ahead of any trailing args. Runs are recorded with
+<code>kind: play</code> / <code>kind: evaluate</code> and
+<code>extra: {experiment, checkpoint}</code>.</p>
+<pre class="term"><code><span class="t-head">experiments/ant.yaml (additions)</span><span class="t-body"><span class="out">play_script: scripts/play_ant.py
+evaluate_script: scripts/eval_ant.py</span></span></code></pre>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi lab play experiments/ant.yaml --checkpoint logs/ant/model.pt --dry-run</span>
+<span class="out">Dry run — nothing was started:
+  command: /opt/IsaacLab/isaaclab.sh -p /home/you/demo/scripts/play_ant.py --checkpoint logs/ant/model.pt
+  cwd:     /home/you/demo/experiments</span>
+<span class="in">caasi lab evaluate experiments/ant.yaml --checkpoint logs/ant/model.pt</span>
+<span class="ok">Run 20260905-172233-ant-train started in the background.</span>
+<span class="dim">  Follow it with: caasi logs 20260905-172233-ant-train -f</span></span></code></pre>
+<p>Neither appends <code>--headless</code> on its own — pass it as a trailing arg (or in the YAML's
+<code>args</code>) when playing a policy back on a headless machine. Recorded artifacts can be
+opened afterwards with <a href="review.html#view-run"><code>caasi view run</code></a>.</p>
 
 <div class="page-nav">
   <a class="prev" href="projects.html"><span class="pn-label">Previous</span><span class="pn-title">← Projects</span></a>
@@ -201,7 +356,7 @@ experiment; the run is tracked with <code>backend: lab</code> and appears in
 </div>
 
 <footer class="doc-footer">
-  Caasi CLI 0.1.0 — these pages live in <code>docs/</code> and need no build step.
+  Caasi CLI 0.2.0 — these pages live in <code>docs/</code> and need no build step.
   Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
 </footer>
 </main>

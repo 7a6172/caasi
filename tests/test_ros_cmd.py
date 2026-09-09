@@ -44,7 +44,17 @@ FAKE_ROS2 = textwrap.dedent(
         esac;;
       service)
         sub="$1"; shift || true
-        [ "$sub" = "list" ] && echo "/talker/get_parameters";;
+        case "$sub" in
+          list) echo "/talker/get_parameters";;
+          info)
+            if [ "$1" = "/talker/get_parameters" ]; then
+              echo "Service Clients:"
+              echo "  /talker: rcl_interfaces/srv/ListParameters"
+            else
+              echo "Unknown service" >&2; exit 1
+            fi;;
+          call) echo "calling $*";;
+        esac;;
       action)
         sub="$1"; shift || true
         [ "$sub" = "list" ] && echo "/navigate_to_position";;
@@ -256,6 +266,70 @@ def test_ros_node(runner, fake_ros):
     result = runner.invoke(app, ["ros", "node", "/ghost"])
     assert result.exit_code == 1
     assert "Node '/ghost' not found" in result.output
+
+
+def test_ros_service_list(runner, fake_ros):
+    result = runner.invoke(app, ["ros", "service", "list"])
+    assert result.exit_code == 0
+    assert "/talker/get_parameters" in result.output
+
+    result = runner.invoke(app, ["ros", "service", "list", "--json"])
+    assert result.exit_code == 0
+    assert json.loads(result.output) == ["/talker/get_parameters"]
+
+
+def test_ros_service_info(runner, fake_ros):
+    result = runner.invoke(app, ["ros", "service", "info", "/talker/get_parameters"])
+    assert result.exit_code == 0
+    assert "Service Clients:" in result.output
+
+    result = runner.invoke(app, ["ros", "service", "info", "/talker/get_parameters", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["service"] == "/talker/get_parameters"
+    assert "Service Clients:" in data["info"]
+
+    result = runner.invoke(app, ["ros", "service", "info", "/ghost"])
+    assert result.exit_code == 1
+    assert "Service '/ghost' not found" in result.output
+
+
+def test_ros_service_call(runner, fake_ros):
+    result = runner.invoke(
+        app,
+        [
+            "ros", "service", "call",
+            "/talker/get_parameters",
+            "rcl_interfaces/srv/ListParameters",
+            "{name: x}",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    flat = " ".join(result.output.split())
+    assert "calling /talker/get_parameters rcl_interfaces/srv/ListParameters {name: x}" in flat
+
+    result = runner.invoke(
+        app,
+        [
+            "ros", "service", "call",
+            "/talker/get_parameters",
+            "rcl_interfaces/srv/ListParameters",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["service"] == "/talker/get_parameters"
+    assert data["type"] == "rcl_interfaces/srv/ListParameters"
+    assert data["returncode"] == 0
+    assert "calling" in data["stdout"]
+
+
+def test_ros_service_requires_ros2(runner, tmp_path, monkeypatch):
+    no_ros2(monkeypatch, tmp_path)
+    result = runner.invoke(app, ["ros", "service", "list"])
+    assert result.exit_code == 1
+    assert "ros2 CLI not found" in result.output
 
 
 def test_ros_graph(runner, fake_ros):

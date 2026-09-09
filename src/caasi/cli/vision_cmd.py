@@ -33,7 +33,7 @@ def vision_status(
             ]
         )
         return
-    table = Table(title=_("vision.title"), header_style="bold")
+    table = Table(header_style="bold", **output.table_styles())
     table.add_column(_("vision.col.component"))
     table.add_column(_("vision.col.status"))
     table.add_column(_("vision.col.version"))

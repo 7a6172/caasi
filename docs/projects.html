@@ -10,7 +10,7 @@
 <body>
 <header class="topbar">
   <a class="brand" href="index.html">Caa<span>si</span></a>
-  <span class="badge">v0.1.0</span>
+  <span class="badge">v0.2.0</span>
   <span class="tagline">Projects: init · setup · project · robot · scene · task</span>
   <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
 </header>
@@ -83,13 +83,12 @@ installs anything itself.</p>
 
 <h3>Summary mode</h3>
 <pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi setup</span>
-<span class="out">        Ecosystem Setup
-  Component  Status      Detail
-  isaacsim   ✗ fail      Isaac Sim not detected
-  isaaclab   ✗ fail      Isaac Lab not detected
-  ros2       ✓ ok        distro 'jazzy', ros2 at /opt/ros/jazzy/bin/ros2
-  pytorch    ✓ ok        torch 2.4.0
-  docker     ✓ ok        Docker version 27.1.1, build 6312585
+<span class="out">Component  Status  Detail
+isaacsim   ✗ fail  Isaac Sim not detected
+isaaclab   ✗ fail  Isaac Lab not detected
+ros2       ✓ ok    distro 'jazzy', ros2 at /opt/ros/jazzy/bin/ros2
+pytorch    ✓ ok    torch 2.4.0
+docker     ✓ ok    Docker version 27.1.1, build 6312585
 Missing core components: isaacsim, isaaclab. Run 'caasi setup &lt;component&gt;' for guidance.</span>
 <span class="err">exit code: 1</span></span></code></pre>
 <p>Exit code: <code>1</code> only when a <strong>core</strong> component
@@ -129,13 +128,12 @@ Single-component mode exits <code>1</code> only if that component's status is
 <h3 id="project-info">caasi project info</h3>
 <pre class="syn"><code>caasi project info [--json]</code></pre>
 <pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">cd ~/experiments/demo &amp;&amp; caasi project info</span>
-<span class="out">         Project
-  Root         /home/you/experiments/demo
-  Name         demo
-  Robots       2
-  Scenes       1
-  Tasks        3
-  Experiments  1</span>
+<span class="out">Root         /home/you/experiments/demo
+Name         demo
+Robots       2
+Scenes       1
+Tasks        3
+Experiments  1</span>
 <span class="in">caasi project info --json</span>
 <span class="out">{ "root": "/home/you/experiments/demo", "name": "demo",
   "counts": { "robot": 2, "scene": 1, "task": 3, "experiments": 1 } }</span></span></code></pre>
@@ -163,16 +161,17 @@ Single-component mode exits <code>1</code> only if that component's status is
 <h2 id="definitions">caasi robot / scene / task</h2>
 <p>Three parallel groups manage the definition YAMLs. A definition is one file:
 <code>robots/&lt;name&gt;.yaml</code>, <code>scenes/&lt;name&gt;.yaml</code>,
-<code>tasks/&lt;name&gt;.yaml</code>. The same subcommands exist for all three
-(<code>info</code> is robot-only).</p>
+<code>tasks/&lt;name&gt;.yaml</code>. <code>list</code>, <code>create</code> and
+<code>inspect</code> exist for all three; <code>info</code> is robot-only; <code>import</code> and
+<code>validate</code> exist for <code>robot</code> and <code>scene</code>; <code>capture</code>
+and <code>reconstruct</code> are scene-only.</p>
 
 <h3 id="def-list">list</h3>
 <pre class="syn"><code>caasi robot list [--json]      # same for scene / task</code></pre>
 <pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi robot list</span>
-<span class="out">              Robots
-  Name   Description
-  agv    Warehouse AGV
-  arm    6-DOF manipulator</span>
+<span class="out">Name  Description
+agv   Warehouse AGV
+arm   6-DOF manipulator</span>
 <span class="in">caasi robot list --json</span>
 <span class="out">[ { "name": "agv", "description": "Warehouse AGV",
     "path": "/home/you/experiments/demo/robots/agv.yaml" }, … ]</span></span></code></pre>
@@ -218,6 +217,133 @@ A missing definition fails with <code>Error: No robot named 'agv2' (looked in 'r
   Tasks: navigate, dock</span></span></code></pre>
 <p>No <code>--json</code> (use <code>inspect --json</code>).</p>
 
+<h3 id="def-import">import</h3>
+<pre class="syn"><code>caasi robot import FILE [--dry-run] [-- CONVERTER_ARGS…]     # same for scene</code></pre>
+<p>Hands one asset file to whichever tool the <code>usd</code> catalog domain resolves and starts
+it as a tracked run (<code>kind: import</code>, <code>backend:</code> the tool that produced the
+command). Caasi converts nothing itself; routing is by extension:</p>
+<table>
+  <thead><tr><th>Extension</th><th>Delegates to</th><th>Mode</th></tr></thead>
+  <tbody>
+    <tr><td><code>.urdf</code> · <code>.xacro</code> · <code>.mjcf</code></td><td>Isaac Sim's <code>omni.importer.urdf</code> through the resolved launcher: <code>&lt;launcher&gt; -m omni.importer.urdf FILE FILE.usd</code></td><td>convert</td></tr>
+    <tr><td><code>.urdf</code> · <code>.xacro</code> when no Isaac Sim resolves</td><td><code>check_urdf FILE</code> (ships with ROS 2)</td><td>validate</td></tr>
+    <tr><td><code>.usd</code> · <code>.usda</code> · <code>.usdc</code> · <code>.usdz</code></td><td><code>usdchecker FILE</code></td><td>validate</td></tr>
+  </tbody>
+</table>
+<p>Args after <code>--</code> are appended to that command line verbatim. On a machine with ROS 2
+but neither Isaac Sim nor the USD tools, every absence is an explicit error rather than a silent
+skip:</p>
+<pre class="term"><code><span class="t-head">shell — this machine, no Isaac Sim / no USD tools</span><span class="t-body"><span class="in">caasi robot import assets/agv.urdf --dry-run</span>
+<span class="out">Dry run — nothing was started:
+  command: /opt/ros/jazzy/bin/check_urdf assets/agv.urdf</span>
+<span class="in">caasi robot import assets/agv.urdf</span>
+<span class="ok">Import started (validate via check_urdf): agv.urdf</span>
+<span class="dim">  Follow it with: caasi logs 20260908-000657-agv -f</span>
+<span class="in">caasi robot import assets/nope.urdf</span>
+<span class="err">Error: File 'assets/nope.urdf' not found.</span>
+<span class="err">exit code: 1</span>
+<span class="in">caasi robot import assets/arm.mjcf</span>
+<span class="err">Error: No converter found for 'arm.mjcf'. Install Isaac Sim (omni.importer.urdf) to convert, or check_urdf to validate only; overrides: catalog.usd.urdf_importer / catalog.usd.check_urdf.</span>
+<span class="err">exit code: 1</span>
+<span class="in">caasi scene import assets/scene.usd</span>
+<span class="err">Error: usdchecker not found — install the USD tools, or override catalog.usd.usdchecker.binaries in config.yaml.</span>
+<span class="err">exit code: 1</span>
+<span class="in">caasi robot import assets/part.stl</span>
+<span class="err">Error: Unsupported asset format '.stl' (expected .urdf, .xacro, .mjcf or .usd/.usda/.usdc).</span>
+<span class="err">exit code: 1</span></span></code></pre>
+<p><code>.mjcf</code> has no <code>check_urdf</code> fallback — only the Isaac Sim importer reads
+it — which is why it fails where <code>.urdf</code> degrades to validation.</p>
+
+<h3 id="def-validate">validate</h3>
+<pre class="syn"><code>caasi robot validate NAME [--json]     # same for scene</code></pre>
+<p>Checks the asset files a definition references — its <code>urdf</code> and <code>usd</code>
+keys, resolved relative to the project root. Each file must exist, and when its checker is
+installed it must also pass: <code>check_urdf</code> for <code>urdf</code>,
+<code>usdchecker</code> for <code>usd</code> (30 s timeout each). A missing checker is not an
+issue — the file is reported as <code>&lt;tool&gt; not available; existence checked only</code>
+and still counts as valid:</p>
+<pre class="term"><code><span class="t-head">shell — check_urdf present, usdchecker absent</span><span class="t-body"><span class="in">caasi robot validate agv</span>
+<span class="ok">Definition 'agv' is valid.</span>
+<span class="dim">  urdf: /home/you/experiments/demo/assets/agv.urdf</span>
+<span class="in">caasi robot validate ghost</span>
+<span class="err">1 issue(s) in definition 'ghost':
+  • urdf: referenced file '/home/you/experiments/demo/assets/ghost.urdf' does not exist.</span>
+<span class="err">exit code: 1</span>
+<span class="in">caasi robot validate bad</span>
+<span class="err">1 issue(s) in definition 'bad':
+  • urdf: check_urdf reported errors.</span>
+<span class="err">exit code: 1</span>
+<span class="in">caasi scene validate aisles --json</span>
+<span class="out">{
+  "name": "aisles",
+  "path": "/home/you/experiments/demo/scenes/aisles.yaml",
+  "valid": true,
+  "files": [
+    {
+      "key": "usd",
+      "path": "/home/you/experiments/demo/assets/scene.usd",
+      "exists": true,
+      "tool": null,
+      "ok": true,
+      "detail": "usdchecker not available; existence checked only"
+    }
+  ],
+  "issues": []
+}</span></span></code></pre>
+<p>JSON is <code>{"name", "path", "valid", "files": [{"key", "path", "exists", "tool", "ok",
+"detail"}], "issues"}</code>; the first line of the checker's own output becomes
+<code>detail</code> when it fails. Exit <code>0</code> with no issues, <code>1</code> with any —
+in both modes. A definition that sets neither key has nothing to check and is valid.</p>
+
+<h3 id="scene-capture">caasi scene capture</h3>
+<pre class="syn"><code>caasi scene capture [TOPICS…] [--name NAME] [--dry-run] [-- BAG_ARGS…]</code></pre>
+<p>Records live topics into the project's <code>datasets/</code> by delegating to
+<code>ros2 bag record</code> — Caasi writes no bag itself. The destination is
+<code>datasets/&lt;name&gt;-&lt;YYYYmmdd-HHMMSS&gt;</code> (<code>--name</code> defaults to
+<code>capture</code>) and is passed as <code>-o</code>; with no topics it records everything via
+<code>-a</code>. The recorder is a tracked run (<code>backend: ros2</code>,
+<code>kind: capture</code>) that inherits your environment — when this shell has not sourced ROS 2,
+Caasi captures a sourced environment for it — and the dataset directory gets a
+<code>metadata.json</code> marking it <code>status: capturing</code>:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi scene capture /scan /camera_front/image_raw --dry-run</span>
+<span class="out">Dry run — nothing was started:
+  command: /opt/ros/jazzy/bin/ros2 bag record /scan /camera_front/image_raw -o /home/you/experiments/demo/datasets/capture-20260908-000750
+  dest:    /home/you/experiments/demo/datasets/capture-20260908-000750</span>
+<span class="in">caasi scene capture /scan --name aisle-loop</span>
+<span class="ok">Capture started: /home/you/experiments/demo/datasets/aisle-loop-20260908-000910</span>
+<span class="dim">  Follow it with: caasi logs 20260908-000910-aisle-loop -f</span>
+<span class="in">caasi run stop aisle-loop</span>
+<span class="out">Run 20260908-000910-aisle-loop stopped.</span></span></code></pre>
+<p><code>metadata.json</code> holds <code>name</code>, <code>created</code>,
+<code>kind: capture</code>, the recorded <code>topics</code>, <code>status</code> and the
+<code>run_id</code> — the same file <a href="data.html#dataset"><code>caasi dataset</code></a>
+reads. Two edges worth knowing: there is no <code>--json</code> here, and <code>TOPICS</code> is
+variadic, so anything Caasi does not recognise is collected into the topic list and lands
+<em>before</em> <code>-o</code>. That is where extra <code>ros2 bag record</code> flags belong —
+<code>caasi scene capture /scan -- --max-bag-size 100000000</code> →
+<code>ros2 bag record /scan --max-bag-size 100000000 -o &lt;dest&gt;</code> — and a stray
+<code>--json</code> ends up there too, <code>ros2 bag record</code> rejects it, and the run shows
+as <code>failed</code> in <code>caasi run list</code>. With no <code>ros2</code> binary the command
+fails before anything is created: <code>Error: ros2 CLI not found; source a ROS 2 distro
+first.</code></p>
+
+<h3 id="scene-reconstruct">caasi scene reconstruct</h3>
+<pre class="syn"><code>caasi scene reconstruct CAPTURE [--dry-run] [-- NUREC_ARGS…]</code></pre>
+<p>Turns a capture — a <code>ros2 bag</code> directory from <code>scene capture</code>, or any
+<a href="data.html#dataset">dataset</a> path — into OpenUSD by delegating to a NuRec CLI: Caasi
+resolves the <code>nurec</code> capability of the <code>usd</code> catalog domain (binary
+<code>nurec</code>) and runs <code>[&lt;nurec&gt;, CAPTURE, ARGS…]</code> as a tracked run
+(<code>backend: nurec</code>, <code>kind: reconstruct</code>). Two gates, in order — the capture
+must exist, then a tool must resolve:</p>
+<pre class="term"><code><span class="t-head">shell — this machine, no NuRec</span><span class="t-body"><span class="in">caasi scene reconstruct datasets/nope</span>
+<span class="err">Error: Capture 'datasets/nope' not found.</span>
+<span class="err">exit code: 1</span>
+<span class="in">caasi scene reconstruct datasets/aisle-loop-20260908-000910</span>
+<span class="err">Error: No neural reconstruction tool detected (nurec). Install NuRec, or point Caasi at its CLI: caasi config set catalog.usd.nurec.binaries "[&lt;cli&gt;]".</span>
+<span class="err">exit code: 1</span></span></code></pre>
+<p>The resolved-CLI transcripts, run naming and manifest fields are on
+<a href="platform.html#scene-reconstruct">Physics &amp; Foundation Models</a>.</p>
+
 <h2 id="workflow">Putting it together</h2>
 <pre class="term"><code><span class="t-head">a typical session</span><span class="t-body"><span class="in">caasi setup</span>
 <span class="dim"># → ros2 ok, isaacsim missing? follow the guide</span>
@@ -235,7 +361,7 @@ A missing definition fails with <code>Error: No robot named 'agv2' (looked in 'r
 </div>
 
 <footer class="doc-footer">
-  Caasi CLI 0.1.0 — these pages live in <code>docs/</code> and need no build step.
+  Caasi CLI 0.2.0 — these pages live in <code>docs/</code> and need no build step.
   Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
 </footer>
 </main>

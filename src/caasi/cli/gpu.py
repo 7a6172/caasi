@@ -3,15 +3,22 @@
 from __future__ import annotations
 
 import sys
+import time
 
 import typer
+from rich.live import Live
 from rich.table import Table
 
+from .. import state
+from ..checks import run_checks
 from ..core import nvidia
 from ..i18n import _
 from ..utils import output, shell
+from . import ecosystem as eco
 
 app = typer.Typer(no_args_is_help=True)
+
+DOCTOR_SECTIONS = ["nvidia", "graphics"]
 
 
 def _require_gpus() -> list[dict]:
@@ -45,7 +52,7 @@ def gpu_status(json_output: bool = typer.Option(False, "--json", help=_("flag.js
         output.echo_json({"cuda": cuda, "gpus": gpus})
         return
 
-    table = Table(title=_("gpu.status_title"), header_style="bold")
+    table = Table(header_style="bold", **output.table_styles())
     for column in ("GPU", _("gpu.col.name"), _("gpu.col.vram"), _("gpu.col.util"), _("gpu.col.temp"), _("gpu.col.power"), _("gpu.col.driver")):
         table.add_column(column)
     for gpu in gpus:
@@ -100,7 +107,8 @@ def gpu_memory(json_output: bool = typer.Option(False, "--json", help=_("flag.js
         output.echo_json({"gpus": gpus, "compute_apps": apps})
         return
 
-    table = Table(title=_("gpu.memory_title"), header_style="bold")
+    output.echo(f"[bold]{_('gpu.memory_title')}[/bold]")
+    table = Table(header_style="bold", **output.table_styles())
     for column in ("GPU", _("gpu.col.name"), _("gpu.col.vram"), _("gpu.col.free")):
         table.add_column(column)
     for gpu in gpus:
@@ -114,7 +122,8 @@ def gpu_memory(json_output: bool = typer.Option(False, "--json", help=_("flag.js
     output.echo(table)
 
     if apps:
-        app_table = Table(title=_("gpu.apps_title"), header_style="bold")
+        output.echo(f"[bold]{_('gpu.apps_title')}[/bold]")
+        app_table = Table(header_style="bold", **output.table_styles())
         for column in ("PID", _("gpu.col.process"), _("gpu.col.vram")):
             app_table.add_column(column)
         for proc in apps:
@@ -126,6 +135,62 @@ def gpu_memory(json_output: bool = typer.Option(False, "--json", help=_("flag.js
         output.echo(app_table)
     else:
         output.echo(f"[dim]{_('gpu.no_apps')}[/dim]")
+
+
+def _monitor_table(gpus: list[dict]) -> Table:
+    table = Table(header_style="bold", **output.table_styles())
+    for column in ("GPU", _("gpu.col.name"), _("gpu.col.util"), _("gpu.col.vram"), _("gpu.col.temp"), _("gpu.col.power")):
+        table.add_column(column)
+    for gpu in gpus:
+        used, total = gpu.get("memory.used"), gpu.get("memory.total")
+        table.add_row(
+            _idx(gpu.get("index")),
+            str(gpu.get("name", "?")),
+            _fmt(gpu.get("utilization.gpu"), "%"),
+            f"{_fmt((used or 0) / 1024, precision=1)} / {_fmt((total or 0) / 1024, precision=1)} GiB",
+            _fmt(gpu.get("temperature.gpu"), "°C"),
+            _fmt(gpu.get("power.draw"), " W", precision=1),
+        )
+    return table
+
+
+@app.command("doctor")
+def gpu_doctor(
+    verbose: bool = typer.Option(False, "--verbose", help=_("doctor.flag.verbose")),
+    json_output: bool = typer.Option(False, "--json", help=_("flag.json")),
+) -> None:
+    results = run_checks(DOCTOR_SECTIONS, state.cfg())
+    eco.render_checks(
+        {"group": "gpu", "sections": DOCTOR_SECTIONS}, results, verbose, json_output
+    )
+
+
+@app.command("monitor")
+def gpu_monitor(
+    interval: float = typer.Option(2.0, "--interval", min=0.1, help=_("gpu.flag.interval")),
+    once: bool = typer.Option(False, "--once", help=_("gpu.flag.once")),
+    json_output: bool = typer.Option(False, "--json", help=_("flag.json")),
+) -> None:
+    if once or output.wants_json(json_output):
+        gpus = _require_gpus()
+        if output.wants_json(json_output):
+            output.echo_json({"interval": interval, "gpus": gpus})
+            return
+        output.echo(_monitor_table(gpus))
+        return
+
+    try:
+        with Live(
+            _monitor_table(_require_gpus()), console=output.console(), refresh_per_second=4
+        ) as live:
+            while True:
+                time.sleep(interval)
+                try:
+                    live.update(_monitor_table(nvidia.query(nvidia.STATUS_FIELDS)))
+                except nvidia.NvidiaSmiError:
+                    continue
+    except KeyboardInterrupt:
+        output.echo(_("gpu.monitor_stopped"))
 
 
 _TORCH_SNIPPET = (
