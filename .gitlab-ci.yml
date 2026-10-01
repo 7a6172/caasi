@@ -1,0 +1,7 @@
+create-pages:
+  script:
+    - echo "Publishing caasi documentation"
+  pages:
+    publish: docs
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
