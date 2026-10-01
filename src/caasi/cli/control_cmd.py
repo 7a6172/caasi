@@ -11,8 +11,10 @@ import yaml
 from .. import state
 from ..checks import CheckResult, run_checks
 from ..core import ros as ros_core
+from ..core.check import CheckContext, CheckEngine
 from ..i18n import _
 from ..utils import output
+from . import check_cmd
 from . import ecosystem as eco
 
 app = typer.Typer(no_args_is_help=True)
@@ -99,42 +101,13 @@ def control_check(
         output.fail(str(exc))
         return
 
-    issues: list[str] = []
-    controllers: list[str] = []
-    if not isinstance(data, dict):
-        issues.append(_("control.issue.mapping"))
-    else:
-        manager = data.get("controller_manager")
-        if not isinstance(manager, dict):
-            issues.append(_("control.issue.no_manager"))
-        else:
-            params = manager.get("ros__parameters") or {}
-            if not isinstance(params, dict):
-                issues.append(_("control.issue.no_manager"))
-            else:
-                if "update_rate" not in params:
-                    issues.append(_("control.issue.no_rate"))
-                for key, value in params.items():
-                    if not isinstance(value, dict):
-                        continue
-                    controllers.append(key)
-                    if "type" not in value:
-                        issues.append(_("control.issue.no_type", controller=key))
-    ok = not issues
+    ctx = CheckContext(config=state.cfg(), extra={"params": data})
+    report = CheckEngine().one("control", ctx)
     if output.wants_json(json_output):
-        output.echo_json(
-            {"path": str(params_file), "controllers": controllers, "issues": issues, "ok": ok}
-        )
-        raise typer.Exit(0 if ok else 1)
-    for controller in controllers:
-        symbol, style = output.status_symbol("ok")
-        output.echo(f"[{style}]{symbol}[/] {controller}")
-    for issue in issues:
-        symbol, style = output.status_symbol("fail")
-        output.echo(f"[{style}]{symbol}[/] {issue}")
-    if not ok:
-        raise typer.Exit(1)
-    output.echo(f"[green]{_('control.check_ok', count=len(controllers))}[/green]")
+        output.echo_json(report.to_dict())
+        raise typer.Exit(check_cmd.exit_code(report.result))
+    check_cmd.render_report(report)
+    raise typer.Exit(check_cmd.exit_code(report.result))
 
 
 def _skip(name: str) -> CheckResult:

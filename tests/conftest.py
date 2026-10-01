@@ -87,6 +87,23 @@ def all_output(result) -> str:
     return out
 
 
+@pytest.fixture
+def fake_fingerprint() -> dict:
+    """Deterministic environment dict for fingerprint tests (known shape)."""
+    return {
+        "system": {"os": "Ubuntu 24.04.3 LTS", "kernel": "6.8.0-generic", "arch": "x86_64"},
+        "hardware": {"cpu_model": "Fake CPU", "cpu_count": 8, "memory_total_kib": 32_000_000},
+        "gpu": {"devices": [{"name": "FakeGPU RTX 9090", "uuid": "GPU-1234", "memory_total_mib": 24576.0, "driver_version": "580.99"}]},
+        "drivers": {"nvidia": "580.99", "cuda": "13.0"},
+        "compilers": {"gcc": "gcc 13.3.0", "g++": "g++ 13.3.0", "clang": None, "cmake": "cmake 3.28.3"},
+        "python": {"version": "3.12.3", "executable": "/usr/bin/python3", "venv": False, "packages": {"torch": "2.7.0", "tensorrt": None}},
+        "ros": {"distro": "jazzy", "root": "/opt/ros/jazzy", "packages": 402, "rmw": None, "domain_id": None, "overlays": []},
+        "isaac": {"sim": {"status": "ok", "detail": "/home/user/isaacsim"}, "lab": {"status": "fail", "detail": "missing"}},
+        "docker": {"installed": True, "version": "Docker 27.1.1"},
+        "git": {"installed": True, "version": "git version 2.43.0"},
+    }
+
+
 FAKE_NVIDIA_SMI = textwrap.dedent(
     """\
     #!/usr/bin/env bash
@@ -102,6 +119,8 @@ FAKE_NVIDIA_SMI = textwrap.dedent(
               echo "0, FakeGPU RTX 9090" ;;
             index,name,memory.total,driver_version)
               echo "0, FakeGPU RTX 9090, 24576, 580.99" ;;
+            name,uuid,memory.total,driver_version)
+              echo "FakeGPU RTX 9090, GPU-1234, 24576, 580.99" ;;
             index,name,driver_version,memory.total,memory.used,memory.free,utilization.gpu,temperature.gpu,power.draw)
               echo "0, FakeGPU RTX 9090, 580.99, 24576, 4096, 20480, 42, 55, 120.50" ;;
             index,name,uuid,serial,pci.bus_id,compute_cap,ecc.mode.current,driver_version)

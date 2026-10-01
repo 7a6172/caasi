@@ -1,4 +1,4 @@
-"""Tests for `caasi robot` / `caasi scene` / `caasi task`."""
+"""Tests for `caasi project robot` / `caasi project scene` / `caasi project task`."""
 
 from __future__ import annotations
 
@@ -22,80 +22,80 @@ def project_dir(runner, tmp_path, monkeypatch):
 
 def test_create_list_inspect_info(runner, project_dir):
     result = runner.invoke(
-        app, ["robot", "create", "go2", "--description", "Quadruped robot"]
+        app, ["project", "robot", "create", "go2", "--description", "Quadruped robot"]
     )
     assert result.exit_code == 0
     assert "go2" in result.output
     assert (project_dir / "robots" / "go2.yaml").is_file()
 
-    result = runner.invoke(app, ["robot", "list"])
+    result = runner.invoke(app, ["project", "robot", "list"])
     assert result.exit_code == 0
     assert "go2" in result.output
     assert "Quadruped robot" in result.output
 
-    result = runner.invoke(app, ["robot", "list", "--json"])
+    result = runner.invoke(app, ["project", "robot", "list", "--json"])
     data = json.loads(result.output)
     assert data[0]["name"] == "go2"
 
-    result = runner.invoke(app, ["robot", "inspect", "go2"])
+    result = runner.invoke(app, ["project", "robot", "inspect", "go2"])
     assert result.exit_code == 0
     assert "kind: robot" in result.output
 
-    result = runner.invoke(app, ["robot", "inspect", "go2", "--json"])
+    result = runner.invoke(app, ["project", "robot", "inspect", "go2", "--json"])
     data = json.loads(result.output)
     assert data["name"] == "go2"
 
-    result = runner.invoke(app, ["robot", "info", "go2"])
+    result = runner.invoke(app, ["project", "robot", "info", "go2"])
     assert result.exit_code == 0
     assert "go2" in result.output
     assert "Quadruped robot" in result.output
 
 
 def test_scene_and_task(runner, project_dir):
-    result = runner.invoke(app, ["scene", "create", "warehouse"])
+    result = runner.invoke(app, ["project", "scene", "create", "warehouse"])
     assert result.exit_code == 0
-    result = runner.invoke(app, ["task", "create", "navigation"])
+    result = runner.invoke(app, ["project", "task", "create", "navigation"])
     assert result.exit_code == 0
 
-    result = runner.invoke(app, ["scene", "list"])
+    result = runner.invoke(app, ["project", "scene", "list"])
     assert "warehouse" in result.output
-    result = runner.invoke(app, ["task", "list"])
+    result = runner.invoke(app, ["project", "task", "list"])
     assert "navigation" in result.output
 
-    result = runner.invoke(app, ["scene", "inspect", "warehouse"])
+    result = runner.invoke(app, ["project", "scene", "inspect", "warehouse"])
     assert "kind: scene" in result.output
-    result = runner.invoke(app, ["task", "inspect", "navigation"])
+    result = runner.invoke(app, ["project", "task", "inspect", "navigation"])
     assert "kind: task" in result.output
 
 
 def test_list_empty_hint(runner, project_dir):
-    result = runner.invoke(app, ["robot", "list"])
+    result = runner.invoke(app, ["project", "robot", "list"])
     assert result.exit_code == 0
-    assert "caasi robot create" in result.output
+    assert "caasi project robot create" in result.output
 
 
 def test_outside_project(runner, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["robot", "list"])
+    result = runner.invoke(app, ["project", "robot", "list"])
     assert result.exit_code == 1
     assert "Not inside a Caasi project" in all_output(result)
 
 
 def test_create_duplicate_and_invalid_name(runner, project_dir):
-    runner.invoke(app, ["robot", "create", "go2"])
-    result = runner.invoke(app, ["robot", "create", "go2"])
+    runner.invoke(app, ["project", "robot", "create", "go2"])
+    result = runner.invoke(app, ["project", "robot", "create", "go2"])
     assert result.exit_code == 1
     assert "already exists" in all_output(result)
 
-    result = runner.invoke(app, ["robot", "create", "bad name"])
+    result = runner.invoke(app, ["project", "robot", "create", "bad name"])
     assert result.exit_code == 1
     assert "invalid name" in all_output(result)
 
 
 def test_inspect_missing(runner, project_dir):
-    result = runner.invoke(app, ["robot", "inspect", "nope"])
+    result = runner.invoke(app, ["project", "robot", "inspect", "nope"])
     assert result.exit_code == 1
     assert "No robot named 'nope'" in all_output(result)
 
-    result = runner.invoke(app, ["robot", "info", "nope"])
+    result = runner.invoke(app, ["project", "robot", "info", "nope"])
     assert result.exit_code == 1

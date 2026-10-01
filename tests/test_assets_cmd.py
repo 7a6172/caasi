@@ -1,4 +1,4 @@
-"""Tests for the assets surface: robot/scene import|validate, scene capture|reconstruct.
+"""Tests for the assets surface: project robot/scene import|validate, scene capture|reconstruct.
 
 Covers plan row `test_assets_cmd.py`: robot import dry-run + converter
 resolution, robot validate pass/fail, scene import|validate, scene capture
@@ -77,7 +77,7 @@ def set_definition(root: Path, kind: str, name: str, **fields) -> None:
 def test_robot_import_dry_run_uses_the_isaac_importer(runner, tmp_path, fake_isaac_tree):
     source = tmp_path / "robot.urdf"
     source.write_text("<robot name='go2'/>", encoding="utf-8")
-    result = runner.invoke(app, ["robot", "import", str(source), "--dry-run"])
+    result = runner.invoke(app, ["project", "robot", "import", str(source), "--dry-run"])
     assert result.exit_code == 0, result.output
     text = flat(result)
     assert "Dry run" in text
@@ -90,7 +90,7 @@ def test_robot_import_dry_run_uses_the_isaac_importer(runner, tmp_path, fake_isa
 def test_robot_import_dry_run_falls_back_to_check_urdf(runner, tmp_path, fake_usd_tools):
     source = tmp_path / "robot.urdf"
     source.write_text("<robot name='go2'/>", encoding="utf-8")
-    result = runner.invoke(app, ["robot", "import", str(source), "--dry-run"])
+    result = runner.invoke(app, ["project", "robot", "import", str(source), "--dry-run"])
     assert result.exit_code == 0, result.output
     text = flat(result)
     assert str(fake_usd_tools / "check_urdf") in text
@@ -100,7 +100,7 @@ def test_robot_import_dry_run_falls_back_to_check_urdf(runner, tmp_path, fake_us
 def test_robot_import_without_any_converter(runner, tmp_path, bare_path):
     source = tmp_path / "robot.urdf"
     source.write_text("<robot name='go2'/>", encoding="utf-8")
-    result = runner.invoke(app, ["robot", "import", str(source)])
+    result = runner.invoke(app, ["project", "robot", "import", str(source)])
     assert result.exit_code == 1
     assert "No converter found for 'robot.urdf'" in flat(result)
 
@@ -108,7 +108,7 @@ def test_robot_import_without_any_converter(runner, tmp_path, bare_path):
 def test_robot_import_mjcf_needs_the_importer(runner, tmp_path, fake_usd_tools):
     source = tmp_path / "robot.mjcf"
     source.write_text("<mujoco/>", encoding="utf-8")
-    result = runner.invoke(app, ["robot", "import", str(source)])
+    result = runner.invoke(app, ["project", "robot", "import", str(source)])
     assert result.exit_code == 1
     assert "No converter found" in flat(result)
 
@@ -116,13 +116,13 @@ def test_robot_import_mjcf_needs_the_importer(runner, tmp_path, fake_usd_tools):
 def test_robot_import_bad_format(runner, tmp_path):
     source = tmp_path / "notes.txt"
     source.write_text("hi", encoding="utf-8")
-    result = runner.invoke(app, ["robot", "import", str(source)])
+    result = runner.invoke(app, ["project", "robot", "import", str(source)])
     assert result.exit_code == 1
     assert "Unsupported asset format '.txt'" in flat(result)
 
 
 def test_robot_import_missing_file(runner, tmp_path):
-    result = runner.invoke(app, ["robot", "import", str(tmp_path / "ghost.urdf")])
+    result = runner.invoke(app, ["project", "robot", "import", str(tmp_path / "ghost.urdf")])
     assert result.exit_code == 1
     assert "not found" in flat(result)
 
@@ -132,7 +132,7 @@ def test_robot_import_tracked_run(runner, tmp_path, monkeypatch, toolbin):
     runs_base = configure_runs(tmp_path, monkeypatch)
     source = tmp_path / "robot.urdf"
     source.write_text("<robot name='go2'/>", encoding="utf-8")
-    result = runner.invoke(app, ["robot", "import", str(source)])
+    result = runner.invoke(app, ["project", "robot", "import", str(source)])
     assert result.exit_code == 0, result.output
     assert "Import started (validate via check_urdf)" in flat(result)
     run_dir = wait_for_run(runs_base)
@@ -145,15 +145,15 @@ def test_robot_import_tracked_run(runner, tmp_path, monkeypatch, toolbin):
 
 def test_robot_validate_pass(runner, tmp_path, monkeypatch, fake_usd_tools):
     root = make_project(runner, tmp_path, monkeypatch)
-    assert runner.invoke(app, ["robot", "create", "go2"]).exit_code == 0
+    assert runner.invoke(app, ["project", "robot", "create", "go2"]).exit_code == 0
     (root / "robots" / "go2.urdf").write_text("<robot name='go2'/>", encoding="utf-8")
     set_definition(root, "robot", "go2", urdf="robots/go2.urdf")
 
-    result = runner.invoke(app, ["robot", "validate", "go2"])
+    result = runner.invoke(app, ["project", "robot", "validate", "go2"])
     assert result.exit_code == 0, result.output
     assert "is valid" in result.output
 
-    result = runner.invoke(app, ["robot", "validate", "go2", "--json"])
+    result = runner.invoke(app, ["project", "robot", "validate", "go2", "--json"])
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert data["valid"] is True
@@ -167,14 +167,14 @@ def test_robot_validate_pass(runner, tmp_path, monkeypatch, fake_usd_tools):
 
 def test_robot_validate_missing_file(runner, tmp_path, monkeypatch, fake_usd_tools):
     root = make_project(runner, tmp_path, monkeypatch)
-    runner.invoke(app, ["robot", "create", "go2"])
+    runner.invoke(app, ["project", "robot", "create", "go2"])
     set_definition(root, "robot", "go2", urdf="robots/nope.urdf")
 
-    result = runner.invoke(app, ["robot", "validate", "go2"])
+    result = runner.invoke(app, ["project", "robot", "validate", "go2"])
     assert result.exit_code == 1
     assert "does not exist" in flat(result)
 
-    result = runner.invoke(app, ["robot", "validate", "go2", "--json"])
+    result = runner.invoke(app, ["project", "robot", "validate", "go2", "--json"])
     assert result.exit_code == 1
     data = json.loads(result.output)
     assert data["valid"] is False
@@ -189,15 +189,15 @@ def test_robot_validate_checker_fails(runner, tmp_path, monkeypatch, toolbin):
         '#!/usr/bin/env bash\necho "broken joint" >&2\nexit 1\n',
     )
     root = make_project(runner, tmp_path, monkeypatch)
-    runner.invoke(app, ["robot", "create", "go2"])
+    runner.invoke(app, ["project", "robot", "create", "go2"])
     (root / "robots" / "go2.urdf").write_text("<robot name='go2'/>", encoding="utf-8")
     set_definition(root, "robot", "go2", urdf="robots/go2.urdf")
 
-    result = runner.invoke(app, ["robot", "validate", "go2"])
+    result = runner.invoke(app, ["project", "robot", "validate", "go2"])
     assert result.exit_code == 1
     assert "check_urdf reported errors" in flat(result)
 
-    result = runner.invoke(app, ["robot", "validate", "go2", "--json"])
+    result = runner.invoke(app, ["project", "robot", "validate", "go2", "--json"])
     data = json.loads(result.output)
     assert data["valid"] is False
     assert data["files"][0]["detail"] == "broken joint"
@@ -207,11 +207,11 @@ def test_robot_validate_without_tools_checks_existence(
     runner, tmp_path, monkeypatch, bare_path
 ):
     root = make_project(runner, tmp_path, monkeypatch)
-    runner.invoke(app, ["robot", "create", "go2"])
+    runner.invoke(app, ["project", "robot", "create", "go2"])
     (root / "robots" / "go2.urdf").write_text("<robot name='go2'/>", encoding="utf-8")
     set_definition(root, "robot", "go2", urdf="robots/go2.urdf")
 
-    result = runner.invoke(app, ["robot", "validate", "go2", "--json"])
+    result = runner.invoke(app, ["project", "robot", "validate", "go2", "--json"])
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
     assert data["valid"] is True
@@ -221,7 +221,7 @@ def test_robot_validate_without_tools_checks_existence(
 
 def test_robot_validate_unknown_definition(runner, tmp_path, monkeypatch):
     make_project(runner, tmp_path, monkeypatch)
-    result = runner.invoke(app, ["robot", "validate", "ghost"])
+    result = runner.invoke(app, ["project", "robot", "validate", "ghost"])
     assert result.exit_code == 1
     assert "No robot named 'ghost'" in flat(result)
 
@@ -232,7 +232,7 @@ def test_robot_validate_unknown_definition(runner, tmp_path, monkeypatch):
 def test_scene_import_dry_run_validates_usd(runner, tmp_path, fake_usd_tools):
     source = tmp_path / "stage.usda"
     source.write_text("#usda 1.0\n", encoding="utf-8")
-    result = runner.invoke(app, ["scene", "import", str(source), "--dry-run"])
+    result = runner.invoke(app, ["project", "scene", "import", str(source), "--dry-run"])
     assert result.exit_code == 0, result.output
     text = flat(result)
     assert str(fake_usd_tools / "usdchecker") in text
@@ -241,18 +241,18 @@ def test_scene_import_dry_run_validates_usd(runner, tmp_path, fake_usd_tools):
 
 def test_scene_validate(runner, tmp_path, monkeypatch, fake_usd_tools):
     root = make_project(runner, tmp_path, monkeypatch)
-    runner.invoke(app, ["scene", "create", "warehouse"])
+    runner.invoke(app, ["project", "scene", "create", "warehouse"])
     (root / "scenes" / "warehouse.usd").write_text("#usda 1.0\n", encoding="utf-8")
     set_definition(root, "scene", "warehouse", usd="scenes/warehouse.usd")
 
-    result = runner.invoke(app, ["scene", "validate", "warehouse", "--json"])
+    result = runner.invoke(app, ["project", "scene", "validate", "warehouse", "--json"])
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
     assert data["valid"] is True
     assert data["files"][0]["key"] == "usd"
     assert data["files"][0]["tool"] == "usdchecker"
 
-    result = runner.invoke(app, ["scene", "validate", "warehouse"])
+    result = runner.invoke(app, ["project", "scene", "validate", "warehouse"])
     assert result.exit_code == 0
     assert "is valid" in result.output
 
@@ -262,7 +262,7 @@ def test_scene_validate(runner, tmp_path, monkeypatch, fake_usd_tools):
 
 def test_scene_capture_dry_run(runner, tmp_path, monkeypatch, fake_ros_sourced):
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["scene", "capture", "--dry-run", "/camera/image_raw"])
+    result = runner.invoke(app, ["project", "scene", "capture", "--dry-run", "/camera/image_raw"])
     assert result.exit_code == 0, result.output
     text = flat(result)
     assert "Dry run" in text
@@ -275,7 +275,7 @@ def test_scene_capture_dry_run(runner, tmp_path, monkeypatch, fake_ros_sourced):
 def test_scene_capture_tracked_run(runner, tmp_path, monkeypatch, fake_ros_sourced):
     root = make_project(runner, tmp_path, monkeypatch)
     runs_base = configure_runs(tmp_path, monkeypatch)
-    result = runner.invoke(app, ["scene", "capture", "/scan", "--name", "kitchen"])
+    result = runner.invoke(app, ["project", "scene", "capture", "/scan", "--name", "kitchen"])
     assert result.exit_code == 0, result.output
     assert "Capture started:" in flat(result)
 
@@ -295,14 +295,14 @@ def test_scene_capture_defaults_to_all_topics(
     runner, tmp_path, monkeypatch, fake_ros_sourced
 ):
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["scene", "capture", "--dry-run"])
+    result = runner.invoke(app, ["project", "scene", "capture", "--dry-run"])
     assert result.exit_code == 0, result.output
     assert "bag record -a -o" in flat(result)
 
 
 def test_scene_capture_requires_ros2(runner, tmp_path, monkeypatch):
     no_ros2(monkeypatch, tmp_path)
-    result = runner.invoke(app, ["scene", "capture"])
+    result = runner.invoke(app, ["project", "scene", "capture"])
     assert result.exit_code == 1
     assert "ros2 CLI not found" in flat(result)
 
@@ -313,7 +313,7 @@ def test_scene_capture_requires_ros2(runner, tmp_path, monkeypatch):
 def test_scene_reconstruct_without_a_tool(runner, tmp_path, bare_path):
     bag = tmp_path / "bag"
     bag.mkdir()
-    result = runner.invoke(app, ["scene", "reconstruct", str(bag)])
+    result = runner.invoke(app, ["project", "scene", "reconstruct", str(bag)])
     assert result.exit_code == 1
     text = flat(result)
     assert "No neural reconstruction tool detected" in text
@@ -321,7 +321,7 @@ def test_scene_reconstruct_without_a_tool(runner, tmp_path, bare_path):
 
 
 def test_scene_reconstruct_missing_capture(runner, tmp_path):
-    result = runner.invoke(app, ["scene", "reconstruct", str(tmp_path / "ghost")])
+    result = runner.invoke(app, ["project", "scene", "reconstruct", str(tmp_path / "ghost")])
     assert result.exit_code == 1
     assert "not found" in flat(result)
 
@@ -332,13 +332,13 @@ def test_scene_reconstruct_dry_run_and_tracked(runner, tmp_path, monkeypatch, to
     bag = tmp_path / "bag"
     bag.mkdir()
 
-    result = runner.invoke(app, ["scene", "reconstruct", str(bag), "--dry-run"])
+    result = runner.invoke(app, ["project", "scene", "reconstruct", str(bag), "--dry-run"])
     assert result.exit_code == 0, result.output
     text = flat(result)
     assert str(toolbin / "nurec") in text
     assert str(bag) in text
 
-    result = runner.invoke(app, ["scene", "reconstruct", str(bag), "--format", "usd"])
+    result = runner.invoke(app, ["project", "scene", "reconstruct", str(bag), "--format", "usd"])
     assert result.exit_code == 0, result.output
     assert "Reconstruction started" in flat(result)
 
@@ -371,14 +371,14 @@ def test_doctor_component_assets_fails_without_core_tools(runner, bare_path):
 
 
 def test_help_lists_the_new_commands(runner):
-    result = runner.invoke(app, ["robot", "--help"])
+    result = runner.invoke(app, ["project", "robot", "--help"])
     assert "import" in result.output
     assert "validate" in result.output
 
-    result = runner.invoke(app, ["scene", "--help"])
+    result = runner.invoke(app, ["project", "scene", "--help"])
     for command in ("import", "validate", "capture", "reconstruct"):
         assert command in result.output
 
-    result = runner.invoke(app, ["task", "--help"])
+    result = runner.invoke(app, ["project", "task", "--help"])
     assert "import" not in result.output
     assert "capture" not in result.output

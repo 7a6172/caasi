@@ -10,7 +10,7 @@
 <body>
 <header class="topbar">
   <a class="brand" href="index.html">Caa<span>si</span></a>
-  <span class="badge">v0.2.0</span>
+  <span class="badge">v0.3.0</span>
   <span class="tagline">Simulation: sim · lab · experiment YAML</span>
   <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
 </header>
@@ -78,19 +78,33 @@ cwd: null                   # optional; working directory (default: the YAML's d
   <tbody>
     <tr><td><code>run</code></td><td>Run an experiment configuration.</td></tr>
     <tr><td><code>headless</code></td><td>Run an experiment with <code>--headless --no-window</code> forced.</td></tr>
-    <tr><td><code>status</code></td><td>Simulation backend status.</td></tr>
     <tr><td><code>check</code></td><td>Check resources before launching.</td></tr>
-    <tr><td><code>logs</code></td><td>Show logs of a simulation run.</td></tr>
     <tr><td><code>extensions</code></td><td>List extensions in the Isaac Sim install tree.</td></tr>
-    <tr><td><code>stop</code> / <code>pause</code> / <code>resume</code></td><td>Stop, pause or resume a running simulation.</td></tr>
   </tbody>
 </table>
-<p>Descriptions are the CLI's own — <code>caasi sim --help</code> prints this list. The launchers
-take the <a href="#experiment">experiment YAML</a> above and produce ordinary
-<a href="runs.html">tracked runs</a>; the rest operate on those runs or on the install itself.</p>
+<p>Descriptions are the CLI's own — <code>caasi sim --help</code> prints this list, and since 0.3.0
+it prints exactly these four. The two launchers take the <a href="#experiment">experiment YAML</a>
+above and produce ordinary <a href="runs.html">tracked runs</a>; <code>check</code> preflights the
+machine and <code>extensions</code> inventories the install.</p>
+<div class="callout warn">
+  <div class="c-title">The control verbs moved under <code>run</code></div>
+  <p><code>sim status</code>, <code>sim stop</code>, <code>sim pause</code>, <code>sim resume</code>
+  and <code>sim logs</code> are gone in 0.3.0. Each was a thin wrapper around one semantic
+  operation that the run group already owns, so drive simulation runs through it with
+  <code>--backend sim</code>: <code>caasi run status|stop|pause|resume|logs &lt;query&gt;
+  --backend sim</code>. The toolchain-availability half of the old <code>sim status</code> now
+  lives in <a href="#sim-check"><code>sim check</code></a>; the machine-wide live view is
+  <a href="observability.html#monitor"><code>caasi monitor</code></a>. See
+  <a href="runs.html#run">caasi run</a> and <a href="#sim-control">below</a>.</p>
+</div>
 
 <h2 id="sim-run">caasi sim run</h2>
 <pre class="syn"><code>caasi sim run CONFIG_PATH [--name NAME] [--dry-run] [--json] [-- SCRIPT_ARGS…]</code></pre>
+<p>An entry point, not a separate operation: <code>sim run</code> delegates to
+<a href="runs.html#run-start"><code>caasi run start CONFIG_PATH --backend sim</code></a>. Many
+entry points, one semantic op — everything below is that command with the sim backend implied, and
+<code>caasi run status</code>/<code>logs</code>/<code>stop</code> apply to the result exactly as
+they do to any other run.</p>
 <table>
   <thead><tr><th>Parameter</th><th>Kind</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
   <tbody>
@@ -130,6 +144,7 @@ take the <a href="#experiment">experiment YAML</a> above and produce ordinary
 <h3 id="sim-headless">caasi sim headless</h3>
 <pre class="syn"><code>caasi sim headless CONFIG_PATH [--name NAME] [--dry-run] [--json] [-- SCRIPT_ARGS…]</code></pre>
 <p><code>sim run</code> with <code>--headless --no-window</code> forced onto the script's argv —
+the same delegation to <a href="runs.html#run-start"><code>run start --backend sim</code></a>,
 same argument, same options, same tracked run — whatever the YAML's <code>headless:</code> key
 says. For configurations written for a windowed session that you now launch on a machine with no
 display.</p>
@@ -146,51 +161,47 @@ display.</p>
 args. The run is recorded with <code>kind: experiment</code>, the YAML's <code>backend</code> and
 <code>extra: {experiment, headless: true}</code>.</p>
 
-<h2 id="sim-control">Status, checks and lifecycle</h2>
-
-<h3 id="sim-status">caasi sim status</h3>
-<pre class="syn"><code>caasi sim status [--json]</code></pre>
-<p>Two things at a glance: is an Isaac Sim install resolvable, and which sim-backend runs are
-currently active (<code>running</code>/<code>paused</code>)?</p>
-<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi sim status</span>
-<span class="ok">✓ Isaac Sim 6.0 → /opt/isaac-sim-6.0</span>
-<span class="out">ID                    Name  Status   PID
-20260905-142301-wave  wave  running  48213</span>
-<span class="in">caasi sim status --json | jq '.backend'</span>
-<span class="out">{ "tool": "isaacsim", "version": "6.0", "path": "/opt/isaac-sim-6.0", "python": null }</span></span></code></pre>
-<p>Always exits <code>0</code> — an unregistered backend is reported
-(<code>✗ Isaac Sim is not registered (caasi config set tools.isaacsim...)</code>) but is not an
-error. JSON: <code>{"backend": {…}, "active_runs": [run records]}</code>.</p>
+<h2 id="sim-control">Checks and lifecycle</h2>
+<p>Two things live under <code>sim</code>: the pre-flight <a href="#sim-check">check</a> and the
+install <a href="#sim-extensions">inventory</a>. Everything else about a simulation run — is it
+alive, what did it print, pause it, stop it — belongs to the
+<a href="runs.html#run">run group</a>, targeted with <code>--backend sim</code>.</p>
+<table>
+  <thead><tr><th>Up to 0.2.0</th><th>Since 0.3.0</th></tr></thead>
+  <tbody>
+    <tr><td><code>caasi sim status</code></td><td><code>caasi run list --backend sim</code> and <code>caasi run status latest --backend sim</code> for the runs; <a href="#sim-check"><code>caasi sim check</code></a> for the toolchain</td></tr>
+    <tr><td><code>caasi sim logs QUERY</code></td><td><code>caasi run logs QUERY --backend sim</code></td></tr>
+    <tr><td><code>caasi sim stop QUERY</code></td><td><code>caasi run stop QUERY --backend sim</code></td></tr>
+    <tr><td><code>caasi sim pause QUERY</code></td><td><code>caasi run pause QUERY --backend sim</code></td></tr>
+    <tr><td><code>caasi sim resume QUERY</code></td><td><code>caasi run resume QUERY --backend sim</code></td></tr>
+  </tbody>
+</table>
 
 <h3 id="sim-check">caasi sim check</h3>
-<pre class="syn"><code>caasi sim check [--verbose]</code></pre>
+<pre class="syn"><code>caasi sim check [--verbose] [--json]</code></pre>
 <p>Pre-flight check before a big launch: runs the doctor engine for the four sections that matter
 for simulation — <code>isaac</code>, <code>nvidia</code>, <code>hardware</code>,
 <code>storage</code> — and prints each check with hints for problems (or all, with
-<code>--verbose</code>).</p>
+<code>--verbose</code>). It also took over the toolchain-availability half of the old
+<code>sim status</code>: whether an Isaac Sim install resolves at all is the first item of the
+report.</p>
+<p><code>sim check</code> is one of the <code>check</code> entry points, so it emits the shared
+<a href="environment.html#check">Check Contract</a> — the same <code>scope</code> /
+<code>items</code> / <code>result</code> report the root <code>caasi check</code> produces, scoped
+to <code>sim</code>:</p>
 <pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi sim check</span>
 <span class="ok">✓ Isaac Sim — 6.0 at /opt/isaac-sim-6.0
 ✓ nvidia-smi — 550.107.02
 ✓ GPU 0 — NVIDIA GeForce RTX 4090 (24564 MiB)
 ✓ RAM — 62.7 GiB
 ✓ Disk (runs) — 412.9 GiB free</span>
+<span class="in">caasi sim check --json | jq '{scope, result}'</span>
+<span class="out">{ "scope": "sim", "result": "ready" }</span>
 <span class="in">caasi sim check &amp;&amp; caasi sim run experiments/wave.yaml</span></span></code></pre>
-<p>Exit <code>1</code> if any check fails (warnings don't fail), else <code>0</code> — made for
-<code>&amp;&amp;</code> chains.</p>
-
-<h3 id="sim-logs">caasi sim logs</h3>
-<pre class="syn"><code>caasi sim logs QUERY [--lines|-n N] [--follow|-f] [--stream|-s stdout|stderr]</code></pre>
-<p><a href="runs.html#logs"><code>caasi run logs</code></a> restricted to simulation runs — same
-options and defaults (<code>-n 50</code>, <code>-s stdout</code>), same follow behaviour. A run
-started by another backend is rejected instead of silently shown:</p>
-<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi sim logs latest -n 2</span>
-<span class="out">[14:41:07] step 10000/10000 fps 244.1
-[14:41:07] done.</span>
-<span class="in">caasi sim logs ant</span>
-<span class="err">Error: Run has backend 'lab', not 'sim'; use: caasi run logs &lt;query&gt;</span></span></code></pre>
-<p>Exit <code>1</code> for an unknown run, a non-<code>sim</code> backend, an unknown
-<code>--stream</code> value or a missing log file. To watch both streams at once, use
-<a href="runs.html#run-attach"><code>caasi run attach</code></a>.</p>
+<p>Exit <code>0</code> when the result is <code>ready</code> or <code>warning</code> (warnings
+don't gate), <code>3</code> when it is <code>incompatible</code> — the exit rule every
+<code>check</code> entry point shares, and what makes it usable in <code>&amp;&amp;</code> chains
+and in CI.</p>
 
 <h3 id="sim-extensions">caasi sim extensions</h3>
 <pre class="syn"><code>caasi sim extensions [--enabled] [--user] [--json]</code></pre>
@@ -217,21 +228,39 @@ caasi.custom.recorder     extsUser  —</span>
 <span class="out">[ { "name": "omni.kit.viewport.window", "source": "exts", "enabled": true } ]</span></span></code></pre>
 <p>This one does need a registered install: without one it fails with <code>Error: Isaac Sim is not
 registered (caasi config set tools.isaacsim...).</code> (exit <code>1</code>), where
-<code>sim status</code> only reports it. A tree with no extension manifests prints
+<a href="#sim-check"><code>sim check</code></a> reports the same absence as an item in its report.
+A tree with no extension manifests prints
 <code>No extensions found.</code> and exits <code>0</code>.</p>
 
-<h3 id="sim-lifecycle">caasi sim stop / pause / resume</h3>
-<pre class="syn"><code>caasi sim stop   QUERY
-caasi sim pause  QUERY
-caasi sim resume QUERY</code></pre>
-<p>Simulation-flavored shortcuts for the identical <a href="runs.html#run">run lifecycle</a>
-commands (same <code>QUERY</code> semantics — <code>latest</code>, id prefix or name — same
-signals, same messages, same exit codes). Convenience, nothing more:</p>
-<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi sim pause latest</span>
+<h3 id="sim-lifecycle">Status, logs and lifecycle: <code>caasi run … --backend sim</code></h3>
+<pre class="syn"><code>caasi run status QUERY [--backend sim|lab|python] [--json]
+caasi run logs   QUERY [--backend sim|lab|python] [--lines|-n N] [--follow|-f] [--stream|-s stdout|stderr]
+caasi run stop   QUERY [--backend sim|lab|python]
+caasi run pause  QUERY [--backend sim|lab|python]
+caasi run resume QUERY [--backend sim|lab|python]</code></pre>
+<p>One underlying operation per verb, reached through the
+<a href="runs.html#run">run group</a>: same <code>QUERY</code> semantics (<code>latest</code>, id
+prefix or name), same signals, same messages, same exit codes, and the same log options and
+defaults (<code>-n 50</code>, <code>-s stdout</code>). <code>--backend</code> filters or targets
+runs by backend — pass <code>sim</code> to keep the group to simulation runs, or drop it to act on
+any run:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi run status latest --backend sim</span>
+<span class="out">wave (20260905-142301-wave)
+  Status     running
+  Backend    sim</span>
+<span class="in">caasi run logs latest --backend sim -n 2</span>
+<span class="out">[14:41:07] step 10000/10000 fps 244.1
+[14:41:07] done.</span>
+<span class="in">caasi run pause latest --backend sim</span>
 <span class="ok">Run 20260905-142301-wave paused.</span>
-<span class="in">caasi sim resume latest &amp;&amp; caasi sim stop latest</span>
+<span class="in">caasi run resume latest --backend sim &amp;&amp; caasi run stop latest --backend sim</span>
 <span class="ok">Run 20260905-142301-wave resumed.
 Run 20260905-142301-wave stopped.</span></span></code></pre>
+<p>To watch both streams at once, use
+<a href="runs.html#run-attach"><code>caasi run attach</code></a>; for the live resource panel —
+CPU, RAM, GPU, VRAM, throughput, runtime — use
+<a href="observability.html#monitor"><code>caasi monitor</code></a>
+(<code>--once</code> for a single snapshot).</p>
 
 <h2 id="lab">caasi lab</h2>
 <p>The same <a href="#experiment">experiment YAML</a>, launched through the Isaac Lab toolchain.
@@ -242,13 +271,12 @@ hands the process off as a detached <a href="runs.html">run</a>.</p>
   <tbody>
     <tr><td><code>status</code></td><td>Isaac Lab environment status.</td></tr>
     <tr><td><code>run</code></td><td>Run an experiment configuration with the lab backend.</td></tr>
-    <tr><td><code>train</code></td><td>Train a policy as a tracked background run.</td></tr>
     <tr><td><code>play</code></td><td>Play a trained policy (<code>isaaclab.sh -p &lt;play script&gt;</code>).</td></tr>
     <tr><td><code>evaluate</code></td><td>Evaluate a trained policy checkpoint.</td></tr>
   </tbody>
 </table>
-<p>Descriptions are the CLI's own — <code>caasi lab --help</code> prints this list. The four
-launchers share their plumbing:</p>
+<p>Descriptions are the CLI's own — <code>caasi lab --help</code> prints this list, and since 0.3.0
+it prints exactly these four. The three launchers share their plumbing:</p>
 <ul>
   <li>The command is built exactly as the <a href="#experiment">backend table</a> describes for
       <code>backend: lab</code>: the registered <code>tools.isaaclab</code> python when it has one,
@@ -259,13 +287,24 @@ launchers share their plumbing:</p>
   <li><code>backend: lab</code> in the YAML is the normal case. Another value still launches, but
       prints a yellow <code>Note: experiment backend is 'sim', not 'lab'.</code> first — the run's
       <code>backend</code> always comes from the YAML.</li>
-  <li>All four accept <code>--name</code>, <code>--dry-run</code>, <code>--json</code> and trailing
+  <li>All three accept <code>--name</code>, <code>--dry-run</code>, <code>--json</code> and trailing
       pass-through args; <code>--dry-run</code> prints the command and cwd (no <code>env:</code>
       lines, unlike <code>sim run</code>) and <code>--json</code> prints the full run record.</li>
   <li>The run's <code>kind</code> comes from the subcommand — <code>experiment</code>,
-      <code>train</code>, <code>play</code>, <code>evaluate</code> — and its manifest carries the
-      experiment path in <code>extra</code>, so <code>caasi run list</code> tells them apart.</li>
+      <code>play</code>, <code>evaluate</code> — and its manifest carries the
+      experiment path in <code>extra</code>, so <code>caasi run list</code> tells them apart.
+      Training runs (<code>kind: train</code>) come from the root
+      <a href="training.html#train"><code>caasi train</code></a> instead.</li>
 </ul>
+<div class="callout warn">
+  <div class="c-title"><code>lab train</code> moved to the root <code>train</code></div>
+  <p>There is no <code>caasi lab train</code> in 0.3.0. Training is the generic root launcher
+  <a href="training.html#train"><code>caasi train CONFIG</code></a> — one command for every
+  backend, delegating to <a href="runs.html#run-start"><code>caasi run start</code></a> and
+  resolving the interpreter through the same <a href="#experiment">backend table</a>, so a
+  <code>backend: lab</code> experiment still launches through <code>isaaclab.sh -p</code>. See
+  <a href="#lab-train">below</a>.</p>
+</div>
 
 <h3 id="lab-status">caasi lab status</h3>
 <pre class="syn"><code>caasi lab status [--json]</code></pre>
@@ -311,19 +350,28 @@ yellow <code>Note: experiment backend is 'lab', not 'sim'.</code> to point out t
 way the run is tracked with <code>backend: lab</code> and appears in <code>caasi run list</code>
 like everything else.</p>
 
-<h3 id="lab-train">caasi lab train</h3>
-<pre class="syn"><code>caasi lab train CONFIG_PATH [--steps N] [--envs N] [--resume PATH] [--seed N]
-              [--device TEXT] [--name NAME] [--dry-run] [--json] [-- SCRIPT_ARGS…]</code></pre>
-<p>The Lab-side twin of <a href="training.html#train"><code>caasi train</code></a>, with the same
-argv translation: <code>--steps</code>, <code>--envs</code>, <code>--resume</code>,
+<h3 id="lab-train">Training: the root <code>caasi train</code></h3>
+<pre class="syn"><code>caasi train CONFIG_PATH [--steps N] [--envs N] [--resume PATH] [--seed N]
+            [--device cuda:0] [--dry-run] [-- SCRIPT_ARGS…]</code></pre>
+<p><code>lab train</code> is gone in 0.3.0: training is the root
+<a href="training.html#train"><code>caasi train</code></a>, the generic training launcher. It
+delegates to <a href="runs.html#run-start"><code>caasi run start</code></a> and resolves the
+interpreter through the same <a href="#experiment">backend table</a>, so a <code>backend: lab</code>
+experiment is still launched with <code>isaaclab.sh -p</code> — one command, every backend. The
+argv translation is the old one: <code>--steps</code>, <code>--envs</code>, <code>--resume</code>,
 <code>--seed</code>, <code>--device</code>, then <code>--headless</code> when the YAML is headless,
-then your trailing args. It adds <code>--name</code> and <code>--json</code>, and records
-<code>kind: train</code> with <code>extra: {experiment, steps, envs}</code>:</p>
-<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi lab train experiments/ant.yaml --steps 500000 --envs 4096 --device cuda:0 --dry-run</span>
+then your trailing args; the run is recorded with <code>kind: train</code> and
+<code>extra: {experiment, steps, envs}</code>. <code>train</code> has no <code>--name</code> and no
+JSON mode of its own — use <code>--dry-run</code> to see the command, then
+<code>caasi run status</code> for everything after launch:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi train experiments/ant.yaml --steps 500000 --envs 4096 --device cuda:0 --dry-run</span>
 <span class="out">Dry run — nothing was started:
   command: /opt/IsaacLab/isaaclab.sh -p /home/you/demo/scripts/train_ant.py --steps 500000 --envs 4096 --device cuda:0 --headless
   cwd:     /home/you/demo/experiments</span>
-<span class="in">caasi lab train experiments/ant.yaml --steps 500000 --envs 4096 --json | jq '.kind, .status'</span>
+<span class="in">caasi train experiments/ant.yaml --steps 500000 --envs 4096</span>
+<span class="ok">Run 20260905-151207-ant-train started in the background.</span>
+<span class="dim">  Follow it with: caasi logs 20260905-151207-ant-train -f</span>
+<span class="in">caasi run status latest --json | jq '.kind, .status'</span>
 <span class="out">"train"
 "running"</span></span></code></pre>
 
@@ -356,8 +404,8 @@ opened afterwards with <a href="review.html#view-run"><code>caasi view run</code
 </div>
 
 <footer class="doc-footer">
-  Caasi CLI 0.2.0 — these pages live in <code>docs/</code> and need no build step.
-  Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
+  Caasi CLI 0.3.0 — these pages live in <code>docs/</code> and need no build step.
+  Source: <a href="https://github.com/7a6172/caasi">github.com/7a6172/caasi</a>.
 </footer>
 </main>
 </div>

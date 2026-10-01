@@ -10,7 +10,7 @@
 <body>
 <header class="topbar">
   <a class="brand" href="index.html">Caa<span>si</span></a>
-  <span class="badge">v0.2.0</span>
+  <span class="badge">v0.3.0</span>
   <span class="tagline">Configuration: files, precedence, tool registry, environment variables</span>
   <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
 </header>
@@ -32,7 +32,7 @@ the same merged result.
   <tbody>
     <tr><td>1</td><td>Built-in defaults</td><td>compiled into Caasi</td><td>Sane starting point (see below).</td></tr>
     <tr><td>2</td><td>Global config</td><td><code>~/.config/caasi/config.yaml</code><br>(or <code>$XDG_CONFIG_HOME/caasi/config.yaml</code>)</td><td>Your machine: tool registry, paths, remotes.</td></tr>
-    <tr><td>3</td><td>Project config</td><td><code>./caasi.yaml</code> (current directory)</td><td>Per-project overrides. Inside a project this is also the project marker file — see <a href="projects.html">Projects</a>.</td></tr>
+    <tr><td>3</td><td>Project config</td><td><code>./caasi.yaml</code> (current directory)</td><td>Per-project overrides. Inside a project this is also the project marker file — see <a href="#manifest">the manifest</a> and <a href="projects.html#manifest">Projects</a>.</td></tr>
     <tr><td>4</td><td><code>CAASI_CONFIG</code></td><td>any path from the env var</td><td>CI / experiment-specific config.</td></tr>
     <tr><td>5</td><td><code>--config &lt;path&gt;</code></td><td>any path from the flag</td><td>Highest precedence, one-shot override.</td></tr>
   </tbody>
@@ -81,6 +81,38 @@ remotes:
     port: 2222
     identity: ~/.ssh/id_ed25519
     path: ~/experiments          # remote working directory</code></pre>
+
+<h2 id="manifest">The project manifest (caasi.yaml)</h2>
+<p>Source 3 in the table above is dual-role. Inside a project, <code>caasi.yaml</code> is not
+only a config layer — it is the project's <strong>manifest</strong>: a flat mapping keyed by an
+integer <code>schema</code> key (currently <code>schema: 1</code>) alongside the project's
+<code>name</code>, a string <code>version</code>, the registered <code>components</code> and
+their <code>requires</code>. The two roles never collide: the manifest keys
+(<code>schema</code>, <code>name</code>, <code>version</code>, <code>components</code>,
+<code>requires</code>, <code>tested</code>) are read by the manifest loader, and the config keys
+(<code>language</code>, <code>layout</code>, <code>tools</code>, <code>catalog</code>, …) by the
+configuration layer — <strong>disjoint namespaces</strong> in one file.</p>
+<pre><code># ./caasi.yaml — manifest keys + config keys in one file
+schema: 1
+name: warehouse-navigation
+version: 0.1.0                 # the project's version (a string) — not the schema marker
+components: { isaac_sim: true, ros2: true }
+requires: { isaac_sim: { version: '&gt;=5.0' } }
+layout: plain                  # ← a config-layer key, merged as source 3</code></pre>
+<p>A legacy manifest (<code>kind: project</code> with an integer <code>version: 1</code>) is
+migrated on read to <code>schema: 1, version: "0.0.0"</code> — and reading never rewrites the
+file. The full manifest reference, including <code>project init/add/remove/inspect</code> and
+<code>project config</code>, lives on the
+<a href="projects.html#manifest">Projects page</a>.</p>
+
+<h2 id="lock">caasi.lock</h2>
+<p><code>caasi.lock</code> is <strong>not a config file</strong> — it never takes part in the
+merge. It is written by <a href="environment.html#env"><code>caasi env lock</code></a> inside a
+project and records the component versions that were <em>resolved</em> on this machine at that
+moment (a fixed baseline plus the manifest's <code>requires</code> keys). It is evidence, not a
+guarantee — a snapshot for audits and reproduction discussions, never a freeze — and feeds the
+<a href="observability.html#provenance">provenance</a> story. An annotated example lives under
+<a href="projects.html#lock">Projects</a>.</p>
 
 <h2 id="tools">The tool registry</h2>
 <p>The registry is how you tell Caasi <em>where your installs are</em> — and which version to use
@@ -357,6 +389,32 @@ or a single object when <code>DOMAIN</code> is given:</p>
 <p><code>overrides</code> is the raw <code>catalog.&lt;domain&gt;</code> mapping from your config,
 so what you changed and what is built-in stays visible at a glance.</p>
 
+<h2 id="audit">New in v0.3.0: opt-in keys</h2>
+<p>v0.3.0 adds a few config keys, and every one of them is <strong>absent by default</strong>:
+the built-in defaults above are unchanged, and behaviour only changes once you set a key
+yourself — in any config layer (global file, project <code>caasi.yaml</code>,
+<code>CAASI_CONFIG</code>, <code>--config</code>).</p>
+<table>
+  <thead><tr><th>Key</th><th>Type</th><th>Effect once set</th></tr></thead>
+  <tbody>
+    <tr><td><code>audit.fix</code></td><td>bool</td><td><code>caasi audit</code> applies the CAASI-owned safe fixes (as if <code>--fix</code> were passed on every invocation) — see <a href="observability.html#audit">audit</a>.</td></tr>
+    <tr><td><code>check.strict</code></td><td>bool</td><td><code>caasi check</code> treats “untested” as a failure instead of a warning — see <a href="environment.html#check">check</a>.</td></tr>
+    <tr><td><code>environment.*</code></td><td>mapping</td><td>Namespace for the environment surface (<code>caasi env</code> and fingerprints). Absent by default.</td></tr>
+    <tr><td><code>monitor.*</code></td><td>mapping</td><td>Namespace for <code>caasi monitor</code>. Absent by default.</td></tr>
+  </tbody>
+</table>
+<pre><code># ~/.config/caasi/config.yaml  — or the project's caasi.yaml config layer
+audit:
+  fix: true        # caasi audit applies CAASI-owned safe fixes
+check:
+  strict: true     # caasi check treats 'untested' as failure</code></pre>
+<div class="callout note">
+  <div class="c-title">Opt-in, not opt-out</div>
+  <p>With <code>audit.fix</code> absent, fixes still require an explicit <code>--fix</code>;
+  with <code>check.strict</code> absent, an untested combination still only warns. Setting
+  either key is a deliberate escalation, and unsetting it restores the default behaviour.</p>
+</div>
+
 <h2 id="env-vars">Environment variables</h2>
 <h3>Consumed by Caasi</h3>
 <table>
@@ -408,8 +466,8 @@ so what you changed and what is built-in stays visible at a glance.</p>
 </div>
 
 <footer class="doc-footer">
-  Caasi CLI 0.2.0 — these pages live in <code>docs/</code> and need no build step.
-  Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
+  Caasi CLI 0.3.0 — these pages live in <code>docs/</code> and need no build step.
+  Source: <a href="https://github.com/7a6172/caasi">github.com/7a6172/caasi</a>.
 </footer>
 </main>
 </div>

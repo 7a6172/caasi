@@ -10,7 +10,7 @@
 <body>
 <header class="topbar">
   <a class="brand" href="index.html">Caa<span>si</span></a>
-  <span class="badge">v0.2.0</span>
+  <span class="badge">v0.3.0</span>
   <span class="tagline">Data: dataset · sensor · vision</span>
   <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
 </header>
@@ -30,18 +30,36 @@ importing a single heavy library.
   <thead><tr><th>Subcommand</th><th>What it does</th></tr></thead>
   <tbody>
     <tr><td><code>list</code></td><td>List datasets under the datasets base directory.</td></tr>
-    <tr><td><code>generate</code></td><td>Generate a dataset from an experiment.</td></tr>
+    <tr><td><code>generate</code></td><td>Generate a dataset from an experiment — the one launcher for simulation-collected <em>and</em> synthetic data.</td></tr>
     <tr><td><code>inspect</code></td><td>Inspect a dataset.</td></tr>
     <tr><td><code>convert</code></td><td>Convert a dataset into a portable index (jsonl/csv).</td></tr>
     <tr><td><code>validate</code></td><td>Validate a dataset.</td></tr>
     <tr><td><code>download</code></td><td>Download a dataset (Hugging Face, NGC or URL) as a tracked run.</td></tr>
   </tbody>
 </table>
-<p>Descriptions are the CLI's own — <code>caasi dataset --help</code> prints this list. For datasets
-<em>generated</em> by Isaac Sim Replicator see <a href="synthetic.html"><code>caasi synth</code></a>;
-for fetching existing ones see <a href="#dataset-download"><code>dataset download</code></a> below
-and its extended treatment in
+<p>Descriptions are the CLI's own — <code>caasi dataset --help</code> prints this list. For fetching
+existing datasets instead of generating them see
+<a href="#dataset-download"><code>dataset download</code></a> below and its extended treatment in
 <a href="synthetic.html#dataset-download">synthetic.html</a>.</p>
+<div class="callout warn">
+  <div class="c-title">New in 0.3.0: the root <code>synth</code> group is gone</div>
+  <p>Synthetic-data generation is no longer a command group of its own — <code>synth</code> is a
+  <strong>backend</strong>, resolved through the <code>sdg</code> catalog domain, and
+  <a href="#dataset-generate"><code>dataset generate</code></a> is its canonical launcher. Every
+  old <code>caasi synth …</code> verb has a <code>dataset</code> equivalent:</p>
+</div>
+<table>
+  <thead><tr><th>Up to 0.2.0</th><th>Since 0.3.0</th></tr></thead>
+  <tbody>
+    <tr><td><code>caasi synth generate CONFIG</code></td><td><a href="#dataset-generate"><code>caasi dataset generate CONFIG</code></a></td></tr>
+    <tr><td><code>caasi synth preview QUERY</code></td><td><a href="#dataset-inspect"><code>caasi dataset inspect QUERY</code></a></td></tr>
+    <tr><td><code>caasi synth validate QUERY</code></td><td><a href="#dataset-validate"><code>caasi dataset validate QUERY</code></a></td></tr>
+    <tr><td><code>caasi synth status</code></td><td><a href="#dataset-list"><code>caasi dataset list</code></a> for the datasets it produced; <code>caasi doctor --component data</code> for the Replicator capabilities</td></tr>
+  </tbody>
+</table>
+<p>The Replicator side of generation — the <code>sdg</code> capabilities, the synthetic tree layout
+and the SDG validation rules — is documented in
+<a href="synthetic.html#synth">synthetic.html</a>.</p>
 
 <h3 id="dataset-concept">What a dataset is</h3>
 <p>A dataset is a directory with a <code>metadata.json</code> plus any of the known data
@@ -108,6 +126,14 @@ same scan <code>inspect</code> reports. The JSON payload is
 <h3 id="dataset-generate">caasi dataset generate</h3>
 <pre class="syn"><code>caasi dataset generate CONFIG_PATH [--episodes N] [--workers N] [--record-images]
             [--record-depth] [--record-lidar] [--name NAME] [--dry-run] [-- SCRIPT_ARGS…]</code></pre>
+<p>Since 0.3.0 this is the canonical launcher for <em>all</em> dataset generation, synthetic data
+included. Which generator actually runs is a backend question, resolved through the catalog (the
+<code>sdg</code> domain for Isaac Sim Replicator) instead of a separate command group: point
+<code>generate</code> at an experiment whose script drives Replicator and you get a synthetic
+dataset, point it at a collector script and you get a simulation-collected one — same options, same
+<code>metadata.json</code>, same tracked run. The Replicator specifics (the gate, the synthetic tree
+and its extra validation rules) are in
+<a href="synthetic.html#synth-generate">synthetic.html</a>.</p>
 <table>
   <thead><tr><th>Parameter</th><th>Kind</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
   <tbody>
@@ -189,7 +215,11 @@ output <code>&lt;dataset&gt;/index.&lt;fmt&gt;</code>. Unknown format →
   "issues": ["metadata declares 100 episode(s) but episodes/ contains 97"]
 }</span>
 <span class="err">exit code: 1</span></span></code></pre>
-<p>Exit <code>0</code> valid / <code>1</code> any issue — in both human and JSON mode.</p>
+<p>Exit <code>0</code> valid / <code>1</code> any issue — in both human and JSON mode. For a
+synthetic (Replicator) dataset the same command also applies the SDG rules — <code>rgb/</code>
+against the declared episode count, and <code>depth/</code>, <code>segmentation/</code>,
+<code>bounding_boxes/</code> against <code>rgb/</code>; see
+<a href="synthetic.html#synth-validate">synthetic.html</a>.</p>
 
 <h3 id="dataset-download">caasi dataset download</h3>
 <pre class="syn"><code>caasi dataset download REF [--backend hf|ngc|url] [--name NAME] [--dry-run] [-- EXTRA…]</code></pre>
@@ -347,8 +377,8 @@ pillow: 10.4.0</span>
 </div>
 
 <footer class="doc-footer">
-  Caasi CLI 0.2.0 — these pages live in <code>docs/</code> and need no build step.
-  Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
+  Caasi CLI 0.3.0 — these pages live in <code>docs/</code> and need no build step.
+  Source: <a href="https://github.com/7a6172/caasi">github.com/7a6172/caasi</a>.
 </footer>
 </main>
 </div>

@@ -13,14 +13,18 @@ from ..i18n import _
 from ..utils import output
 from . import (
     accelerated,
+    audit_cmd,
     benchmark_cmd,
+    check_cmd,
     config_cmd,
     container_cmd,
     control_cmd,
     dataset_cmd,
+    env_cmd,
     gpu,
     lab,
     misc,
+    monitor_cmd,
     moveit_cmd,
     native_cmd,
     nav_cmd,
@@ -33,7 +37,6 @@ from . import (
     setup_cmd,
     shell_cmd,
     sim,
-    synth_cmd,
     teleop_cmd,
     train_cmd,
     view_cmd,
@@ -41,7 +44,6 @@ from . import (
 )
 from . import platform as platform_cmd
 from . import system as system_cmd
-from .definitions import build_app
 from .doctor import doctor_command
 from .init_cmd import init_command
 
@@ -52,20 +54,18 @@ if TYPE_CHECKING:  # pragma: no cover
 # Root help taxonomy: panel title -> commands, alphabetical within each panel.
 # Mirrors the group table in README.md and the command map in docs/.
 HELP_PANELS: dict[str, tuple[str, ...]] = {
-    _("help.panel.start"): ("doctor", "help", "info", "init", "setup", "version"),
-    _("help.panel.environment"): ("config", "gpu", "sensor", "system", "vision"),
+    _("help.panel.start"): ("audit", "check", "doctor", "help", "info", "init", "setup", "version"),
+    _("help.panel.environment"): ("config", "env", "gpu", "monitor", "sensor", "system", "vision"),
     _("help.panel.projects"): (
         "logs",
         "project",
         "replay",
-        "robot",
         "run",
-        "scene",
-        "task",
+        "start",
         "view",
     ),
     _("help.panel.simulation"): ("benchmark", "lab", "physics", "sim", "train"),
-    _("help.panel.data"): ("dataset", "synth", "teleop"),
+    _("help.panel.data"): ("dataset", "teleop"),
     _("help.panel.ros"): ("control", "moveit", "nav", "ros"),
     _("help.panel.accelerated"): (
         "isaac-ros",
@@ -177,19 +177,25 @@ app.command("version", help=_("version.help"))(misc.version_command)
 app.command("info", help=_("info.help"))(misc.info_command)
 app.command("help", help=_("help.help"))(misc.help_command)
 app.command("doctor", help=_("doctor.help"))(doctor_command)
+app.command("check", help=_("check.help"))(check_cmd.check_command)
+app.command("audit", help=_("audit.help"))(audit_cmd.audit_command)
 app.add_typer(gpu.app, name="gpu", help=_("gpu.help"))
 app.add_typer(system_cmd.app, name="system", help=_("system.help"))
 app.add_typer(config_cmd.app, name="config", help=_("config.help"))
+app.add_typer(env_cmd.app, name="env", help=_("env.help"))
+app.command("monitor", help=_("monitor.help"))(monitor_cmd.monitor_command)
 app.add_typer(sim.app, name="sim", help=_("sim.help"))
 app.add_typer(lab.app, name="lab", help=_("lab.help"))
 app.add_typer(run_cmd.app, name="run", help=_("run.help"))
 app.command("logs", help=_("logs.help"))(run_cmd.run_logs)
+app.command(
+    "start",
+    help=_("start.help"),
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)(run_cmd.run_start)
 app.command("init", help=_("init.help"))(init_command)
 app.command("setup", help=_("setup.help"))(setup_cmd.setup_command)
 app.add_typer(project_cmd.app, name="project", help=_("project.help"))
-app.add_typer(build_app("robot"), name="robot", help=_("robot.help"))
-app.add_typer(build_app("scene"), name="scene", help=_("scene.help"))
-app.add_typer(build_app("task"), name="task", help=_("task.help"))
 app.command(
     "train",
     help=_("train.help"),
@@ -197,7 +203,6 @@ app.command(
 )(train_cmd.train_command)
 app.add_typer(benchmark_cmd.app, name="benchmark", help=_("benchmark.help"))
 app.add_typer(dataset_cmd.app, name="dataset", help=_("dataset.help"))
-app.add_typer(synth_cmd.app, name="synth", help=_("synth.help"))
 app.add_typer(teleop_cmd.app, name="teleop", help=_("teleop.help"))
 app.command("replay", help=_("replay.help"))(replay_cmd.replay_command)
 app.add_typer(native_cmd.app, name="native", help=_("native.help"))

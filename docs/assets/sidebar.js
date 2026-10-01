@@ -14,6 +14,8 @@
         { href: "index.html#installation", label: "Installation", sub: true },
         { href: "index.html#quickstart", label: "Quickstart", sub: true },
         { href: "index.html#conventions", label: "Global options & conventions", sub: true },
+        { href: "index.html#verbs", label: "The five verbs", sub: true },
+        { href: "index.html#check-contract", label: "The check contract", sub: true },
         { href: "index.html#command-map", label: "Command map", sub: true }
       ]
     },
@@ -25,6 +27,8 @@
         { href: "environment.html#gpu", label: "gpu", sub: true },
         { href: "environment.html#system", label: "system", sub: true },
         { href: "environment.html#info", label: "info & version", sub: true },
+        { href: "environment.html#env", label: "env (inspect · fingerprint · lock)", sub: true },
+        { href: "environment.html#check", label: "check & the contract", sub: true },
         { href: "configuration.html", label: "Configuration" },
         { href: "configuration.html#files", label: "Files & precedence", sub: true },
         { href: "configuration.html#tools", label: "Tool registry", sub: true },
@@ -37,13 +41,29 @@
       ]
     },
     {
+      title: "Observability",
+      items: [
+        { href: "observability.html", label: "Observability" },
+        { href: "observability.html#verbs", label: "The five-verb rule", sub: true },
+        { href: "observability.html#monitor", label: "monitor", sub: true },
+        { href: "observability.html#logs", label: "Aggregated run logs", sub: true },
+        { href: "observability.html#audit", label: "audit", sub: true },
+        { href: "observability.html#provenance", label: "Provenance & run identity", sub: true }
+      ]
+    },
+    {
       title: "Projects",
       items: [
         { href: "projects.html", label: "Project workflow" },
         { href: "projects.html#init", label: "init", sub: true },
+        { href: "projects.html#manifest", label: "manifest & schema", sub: true },
+        { href: "projects.html#components", label: "add / remove / list / inspect", sub: true },
+        { href: "projects.html#add-file", label: "add-file", sub: true },
+        { href: "projects.html#config", label: "project config", sub: true },
         { href: "projects.html#setup", label: "setup", sub: true },
-        { href: "projects.html#project", label: "project", sub: true },
-        { href: "projects.html#definitions", label: "robot / scene / task", sub: true }
+        { href: "projects.html#project", label: "info & validate", sub: true },
+        { href: "projects.html#definitions", label: "project robot / scene / task", sub: true },
+        { href: "projects.html#lock", label: "caasi.lock", sub: true }
       ]
     },
     {
@@ -52,7 +72,7 @@
         { href: "simulation.html", label: "sim & lab" },
         { href: "simulation.html#experiment", label: "Experiment YAML", sub: true },
         { href: "simulation.html#sim-run", label: "sim run", sub: true },
-        { href: "simulation.html#sim-control", label: "sim status/check/stop", sub: true },
+        { href: "simulation.html#sim-control", label: "checks & lifecycle", sub: true },
         { href: "simulation.html#lab", label: "lab status", sub: true },
         { href: "training.html", label: "train & benchmark" },
         { href: "training.html#train", label: "train", sub: true },
@@ -112,7 +132,7 @@
         { href: "platform.html#warp", label: "warp", sub: true },
         { href: "platform.html#groot", label: "groot", sub: true },
         { href: "platform.html#cosmos", label: "cosmos", sub: true },
-        { href: "platform.html#scene-reconstruct", label: "scene reconstruct", sub: true }
+        { href: "platform.html#scene-reconstruct", label: "project scene reconstruct", sub: true }
       ]
     },
     {

@@ -10,7 +10,7 @@
 <body>
 <header class="topbar">
   <a class="brand" href="index.html">Caa<span>si</span></a>
-  <span class="badge">v0.2.0</span>
+  <span class="badge">v0.3.0</span>
   <span class="tagline">Synthetic data &amp; teleoperation: synth · teleop</span>
   <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
 </header>
@@ -26,39 +26,49 @@ the chain record → inspect → train → evaluate needs no glue code. Caasi ad
 no teleoperation of its own: it resolves what is installed and launches it.
 </p>
 
-<h2 id="synth">caasi synth</h2>
-<p>Caasi implements no SDG engine. <code>generate</code> reuses the experiment runner
-(<code>backend: sim</code>) after checking that the Replicator extension resolves from the
+<h2 id="synth">Synthetic data — <code>caasi dataset generate</code></h2>
+<div class="callout warn">
+  <div class="c-title">The root <code>synth</code> group was removed in 0.3.0</div>
+  <p>There is no <code>caasi synth</code> any more. Synthetic-data generation now lives in
+  <a href="data.html#dataset-generate"><code>caasi dataset generate</code></a> —
+  <code>synth</code> is a <strong>backend</strong>, resolved through the <code>sdg</code> catalog
+  domain, not a command. The old verbs map onto the dataset group: <code>synth generate</code> →
+  <a href="data.html#dataset-generate"><code>dataset generate</code></a>,
+  <code>synth preview</code> →
+  <a href="data.html#dataset-inspect"><code>dataset inspect</code></a>,
+  <code>synth validate</code> →
+  <a href="data.html#dataset-validate"><code>dataset validate</code></a>, and
+  <code>synth status</code> → <a href="data.html#dataset-list"><code>dataset list</code></a> for
+  the datasets it produced plus <code>caasi doctor --component data</code> for the capabilities.
+  The canonical reference for the group is <a href="data.html#dataset">caasi dataset</a>; what
+  follows is the synthetic-specific half, under its 0.3.0 command names.</p>
+</div>
+<p>The design did not change: Caasi implements no SDG engine. Generation reuses the experiment
+runner (<code>backend: sim</code>) after checking that the Replicator extension resolves from the
 <code>sdg</code> catalog domain, and the run writes into <code>CAASI_DATASET_DIR</code>.
-<code>preview</code> and <code>validate</code> are filesystem-only summaries of the synthetic
+Inspection and validation are filesystem-only summaries of the synthetic
 tree — one <code>rgb/</code> frame counts as one produced episode and no image is ever
 decoded.</p>
 
-<h3 id="synth-status">caasi synth status</h3>
-<pre class="syn"><code>caasi synth status [--json]</code></pre>
-<p>Reports the two capabilities of the <code>sdg</code> catalog domain —
+<h3 id="synth-status">Capabilities: where <code>synth status</code> went</h3>
+<pre class="syn"><code>caasi config catalog sdg [--json]
+caasi doctor --component data [--verbose] [--json]
+caasi dataset list [--limit|-n N] [--json]</code></pre>
+<p>The status verb split across the commands that already owned its two halves. The
+<code>sdg</code> catalog domain still describes the same two capabilities —
 <code>replicator</code> (<code>exts/omni.replicator.core</code>, core) and
 <code>writer_kit</code> (<code>exts/omni.replicator.writer.kit</code>) — both detected as
-paths under the Isaac Sim installation. On a machine without Isaac Sim this is the real
+paths under the Isaac Sim installation.
+<a href="configuration.html#config-catalog"><code>caasi config catalog sdg</code></a> prints that
+definition, and every field stays overridable with
+<code>caasi config set catalog.sdg.&lt;capability&gt;.&lt;field&gt; &lt;value&gt;</code>. The
+datasets a synthetic run produced — including one still <code>generating</code> — are listed by
+<a href="data.html#dataset-list"><code>caasi dataset list</code></a>, with each one's
+<code>status</code> and <code>source</code> read from its <code>metadata.json</code>.</p>
+<p>Whether the capability is installed at all is gated by
+<a href="environment.html#doctor">doctor</a>'s <code>data</code> component, which also covers the
+bag-storage plugins and the download CLIs. On a machine without Isaac Sim this is the real
 output:</p>
-<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi synth status</span>
-<span class="out">Synthetic Data Generation
-Capability  State    Detail
-replicator  missing  not installed
-writer_kit  absent   not installed
-0 of 2 capabilities installed.</span></span></code></pre>
-<p>The core capability shows <span class="pill fail">missing</span>, the optional one
-<span class="pill">absent</span>; the summary line counts installed capabilities. Exit
-<code>0</code> — this is a report, not a gate. JSON carries the full payload:
-<code>domain</code>, <code>kind</code>, <code>tool</code>, <code>root</code>,
-<code>total</code>, <code>installed</code>, <code>capabilities</code> (each with
-<code>key</code>, <code>label</code>, <code>group</code>, <code>core</code>,
-<code>found</code>, <code>how</code>, <code>value</code>, <code>launch</code>,
-<code>script</code>, <code>nodes</code>), <code>launcher</code> and <code>running</code>:</p>
-<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi synth status --json | jq '{domain, total, installed, running}'</span>
-<span class="out">{ "domain": "sdg", "total": 2, "installed": 0, "running": [] }</span></span></code></pre>
-<p>The same hardware/software surface is gated by <a href="environment.html#doctor">doctor</a>'s
-<code>data</code> component, which also covers the bag-storage plugins and the download CLIs:</p>
 <pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi doctor --component data</span>
 <span class="out">Environment Diagnostics
 
@@ -73,18 +83,18 @@ catalog.data.replicator.paths [...]`.</span>
 <span class="err">✘ 1 issue(s) found, 0 warning(s). Run with --verbose for hints.
 exit code: 1</span></span></code></pre>
 
-<h3 id="synth-generate">caasi synth generate</h3>
-<pre class="syn"><code>caasi synth generate CONFIG_PATH [--episodes N] [--output PATH] [--dry-run] [-- SCRIPT_ARGS…]</code></pre>
-<table>
-  <thead><tr><th>Parameter</th><th>Kind</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
-  <tbody>
-    <tr><td><code>CONFIG_PATH</code></td><td>argument</td><td>path</td><td>required</td><td>Experiment YAML with <code>backend: sim</code> and a <code>script</code> — the same file <a href="simulation.html#experiment"><code>sim run</code></a> consumes.</td></tr>
-    <tr><td><code>--episodes</code></td><td>option</td><td>int</td><td>—</td><td>→ script arg <code>--episodes N</code>; also recorded in <code>metadata.json</code>.</td></tr>
-    <tr><td><code>--output</code></td><td>option</td><td>path</td><td>—</td><td>Write the dataset here instead of under <code>datasets/</code> (used as-is; its basename becomes the dataset name).</td></tr>
-    <tr><td><code>--dry-run</code></td><td>option</td><td>flag</td><td>off</td><td>Print the command without starting it.</td></tr>
-    <tr><td>trailing args</td><td>pass-through</td><td></td><td></td><td>Anything Caasi doesn't recognize is appended verbatim to the script's argv.</td></tr>
-  </tbody>
-</table>
+<h3 id="synth-generate">Generating: <code>caasi dataset generate</code></h3>
+<pre class="syn"><code>caasi dataset generate CONFIG_PATH [--episodes N] [--workers N] [--record-images]
+            [--record-depth] [--record-lidar] [--name NAME] [--dry-run] [-- SCRIPT_ARGS…]</code></pre>
+<p>The canonical synthetic-data launcher, and the command the old <code>synth generate</code>
+became. Its full option table lives with
+<a href="data.html#dataset-generate"><code>dataset generate</code></a>; what follows is the part
+specific to synthetic data. <code>CONFIG_PATH</code> is the same
+<a href="simulation.html#experiment">experiment YAML</a> <code>sim run</code> consumes —
+<code>backend: sim</code> plus a <code>script</code> that drives Replicator —
+<code>--episodes N</code> still becomes the script arg <code>--episodes N</code> and is recorded in
+<code>metadata.json</code>, <code>--dry-run</code> still prints the command without starting it, and
+anything Caasi doesn't recognize is appended verbatim to the script's argv.</p>
 <p>What happens on launch:</p>
 <ol>
   <li>The Replicator gate runs first: <code>sdg.replicator</code> must resolve, even for
@@ -92,11 +102,11 @@ exit code: 1</span></span></code></pre>
       <code>Error: Isaac Sim Replicator was not found (exts/omni.replicator.core). Install
       Isaac Sim, or point Caasi at it with `caasi config set catalog.sdg.replicator.paths
       [...]`.</code> (exit 1).</li>
-  <li>The dataset directory is created: <code>--output PATH</code> as-is, otherwise
+  <li>The dataset directory is created as
       <code>&lt;name-slug&gt;-&lt;YYYYmmdd-HHMMSS&gt;</code> in the project's
       <code>datasets/</code> or <code>paths.datasets</code> (default
-      <code>~/.caasi/datasets</code>) — the same rules as
-      <a href="data.html#dataset-generate"><code>dataset generate</code></a>.</li>
+      <code>~/.caasi/datasets</code>), with <code>--name</code> supplying the slug — the same rules
+      as <a href="data.html#dataset-generate"><code>dataset generate</code></a>.</li>
   <li>The script receives <code>--dataset-dir &lt;dir&gt;</code> and the environment variable
       <code>CAASI_DATASET_DIR</code> (plus <code>--headless</code> when the experiment declares
       it) — the generator writes the synthetic tree there.</li>
@@ -123,21 +133,21 @@ exit code: 1</span></span></code></pre>
   "status": "generating",
   "run_id": "20260907-101500-sdg-dome"
 }</code></pre>
-<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi synth generate experiments/sdg_dome.yaml --episodes 200 --dry-run</span>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi dataset generate experiments/sdg_dome.yaml --episodes 200 --dry-run</span>
 <span class="out">Dry run — nothing was started:
   command: /opt/isaac-sim-6.0/python.sh /home/you/demo/scripts/sdg_collect.py --episodes 200 --headless --dataset-dir &lt;dir&gt;
   cwd:     /home/you/demo/experiments</span>
-<span class="in">caasi synth generate experiments/sdg_dome.yaml --episodes 200</span>
-<span class="ok">Synthetic data generation started: /home/you/.caasi/datasets/sdg-dome-20260907-101500</span>
+<span class="in">caasi dataset generate experiments/sdg_dome.yaml --episodes 200</span>
+<span class="ok">Dataset generation started: /home/you/.caasi/datasets/sdg-dome-20260907-101500</span>
 <span class="dim">  Follow it with: caasi logs 20260907-101500-sdg-dome -f</span></span></code></pre>
 
-<h3 id="synth-preview">caasi synth preview</h3>
-<pre class="syn"><code>caasi synth preview QUERY [--json]</code></pre>
-<p><code>QUERY</code> is the same argument <a href="data.html#dataset-query"><code>dataset
-inspect</code></a> takes: a path, <code>latest</code>/<code>last</code>/<code>newest</code>, or
-a unique name/prefix — unknown or ambiguous →
-<code>Error: No dataset matching '&lt;query&gt;'.</code> (exit 1). Preview counts files, never
-decodes images:</p>
+<h3 id="synth-preview">Inspecting: <code>caasi dataset inspect</code></h3>
+<pre class="syn"><code>caasi dataset inspect QUERY [--json]</code></pre>
+<p>The synthetic-data half of <a href="data.html#dataset-inspect"><code>dataset inspect</code></a>;
+<code>QUERY</code> is the <a href="data.html#dataset-query">usual dataset argument</a> — a path,
+<code>latest</code>/<code>last</code>/<code>newest</code>, or a unique name/prefix, with unknown or
+ambiguous → <code>Error: No dataset matching '&lt;query&gt;'.</code> (exit 1). Inspect counts files,
+never decodes images:</p>
 <ul>
   <li><strong>episodes produced</strong> = number of files in <code>rgb/</code>;</li>
   <li>per-directory file counts (recursive) for <code>rgb</code>, <code>depth</code>,
@@ -146,7 +156,7 @@ decodes images:</p>
   <li>elapsed seconds since the metadata's <code>created</code> timestamp;</li>
   <li>the linked run's id and live status.</li>
 </ul>
-<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi synth preview latest</span>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi dataset inspect latest</span>
 <span class="out">sdg-dome /home/you/.caasi/datasets/sdg-dome-20260907-101500
   generator: replicator
   episodes: 200 produced, 200 declared
@@ -159,19 +169,19 @@ depth             200
 segmentation      200
 bounding_boxes    200
 metadata            3</span>
-<span class="in">caasi synth preview latest --json | jq '{episodes_produced, episodes_declared}'</span>
+<span class="in">caasi dataset inspect latest --json | jq '{episodes_produced, episodes_declared}'</span>
 <span class="out">{ "episodes_produced": 200, "episodes_declared": 200 }</span></span></code></pre>
 <p>JSON payload: <code>{"path", "name", "generator", "episodes_declared",
 "episodes_produced", "counts", "files", "bytes", "elapsed", "run"}</code>. <code>run</code> is
 <code>null</code> when unlinked or <code>{"id", "status": "unknown"}</code> if the run was
 deleted; <code>elapsed</code> is <code>null</code> when <code>created</code> is unparseable.</p>
 
-<h3 id="synth-validate">caasi synth validate</h3>
-<pre class="syn"><code>caasi synth validate QUERY [--json]</code></pre>
-<p>Starts from the structural checks of
-<a href="data.html#dataset-validate"><code>dataset validate</code></a> (metadata present, valid
-JSON object, <code>name</code> set, declared episode count vs <code>episodes/</code>) and adds
-two SDG rules, with these exact issue strings:</p>
+<h3 id="synth-validate">Validating: <code>caasi dataset validate</code></h3>
+<pre class="syn"><code>caasi dataset validate QUERY [--json]</code></pre>
+<p><a href="data.html#dataset-validate"><code>caasi dataset validate</code></a> starts from the
+structural checks (metadata present, valid JSON object, <code>name</code> set, declared episode
+count vs <code>episodes/</code>) and, for a synthetic dataset, adds two SDG rules with these exact
+issue strings:</p>
 <ul>
   <li>when metadata declares an integer <code>episodes</code> and <code>rgb/</code> exists:
       <code>metadata declares 200 episode(s) but rgb/ holds 197</code>;</li>
@@ -180,12 +190,12 @@ two SDG rules, with these exact issue strings:</p>
       <code>segmentation/ holds 0 file(s) but rgb/ holds 197</code> — each must match the
       <code>rgb/</code> count.</li>
 </ul>
-<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi synth validate latest</span>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi dataset validate latest</span>
 <span class="err">2 issue(s) found:
   • metadata declares 200 episode(s) but rgb/ holds 197
   • segmentation/ holds 0 file(s) but rgb/ holds 197
 exit code: 1</span>
-<span class="in">caasi synth validate latest --json</span>
+<span class="in">caasi dataset validate latest --json</span>
 <span class="out">{
   "path": "/home/you/.caasi/datasets/sdg-dome-20260907-101500",
   "valid": false,
@@ -327,19 +337,20 @@ exit code: 1</span></span></code></pre>
 writes to the same convention, so the consumers need no glue. The chain, in real commands:</p>
 <ol>
   <li><strong>Produce.</strong> Demonstrations: <code>caasi teleop record</code>
-      (<a href="#teleop-record">above</a>). Synthetic frames: <code>caasi synth generate</code>
-      (<a href="#synth-generate">above</a>). Simulation-collected data:
-      <a href="data.html#dataset-generate"><code>caasi dataset generate</code></a>. Existing
-      data: <a href="#dataset-download"><code>caasi dataset download</code></a>.</li>
+      (<a href="#teleop-record">above</a>). Synthetic frames and simulation-collected data:
+      <a href="data.html#dataset-generate"><code>caasi dataset generate</code></a> — the synthetic
+      half is detailed <a href="#synth-generate">above</a>. Existing data:
+      <a href="#dataset-download"><code>caasi dataset download</code></a>.</li>
   <li><strong>Inspect.</strong> <code>caasi teleop stop</code> closes the recording, then
       <a href="data.html#dataset-inspect"><code>caasi dataset inspect latest</code></a> shows
-      metadata, on-disk contents and the linked run; <code>caasi synth preview latest</code>
-      (<a href="#synth-preview">above</a>) counts produced episodes for SDG sets. Gate with
-      <a href="data.html#dataset-validate"><code>caasi dataset validate</code></a> or
-      <code>caasi synth validate</code> (<a href="#synth-validate">above</a>).</li>
-  <li><strong>Train.</strong> <a href="simulation.html#lab"><code>caasi lab train</code></a>
-      for Isaac Lab experiments, or <a href="training.html#train"><code>caasi train</code></a>
-      for any experiment — both start tracked background runs.</li>
+      metadata, on-disk contents and the linked run — for SDG sets it also counts produced
+      episodes (<a href="#synth-preview">above</a>). Gate with
+      <a href="data.html#dataset-validate"><code>caasi dataset validate</code></a>, whose SDG rules
+      are <a href="#synth-validate">above</a>.</li>
+  <li><strong>Train.</strong> <a href="training.html#train"><code>caasi train</code></a>
+      for any experiment — Isaac Lab ones included (see the
+      <a href="simulation.html#lab-train"><code>lab</code> view</a>) — starts a tracked background
+      run.</li>
   <li><strong>Evaluate.</strong>
       <a href="simulation.html#lab"><code>caasi lab evaluate</code></a> runs the experiment's
       <code>evaluate_script</code> against a checkpoint;
@@ -363,7 +374,7 @@ writes to the same convention, so the consumers need no glue. The chain, in real
   status: recording
   run_id: 20260907-210512-pick-place
   Run: 20260907-210512-pick-place (stopped)</span>
-<span class="in">caasi lab train experiments/pick.yaml --steps 100000 --device cuda:0</span>
+<span class="in">caasi train experiments/pick.yaml --steps 100000 --device cuda:0</span>
 <span class="ok">Run 20260907-212000-pick started in the background.</span>
 <span class="dim">  Follow it with: caasi logs 20260907-212000-pick -f</span>
 <span class="in">caasi lab evaluate experiments/pick.yaml --checkpoint runs/20260907-212000-pick/model_000100000.pt</span>
@@ -447,8 +458,8 @@ Dry runs need no tool installed and leave no directories behind.</p>
 </div>
 
 <footer class="doc-footer">
-  Caasi CLI 0.2.0 — these pages live in <code>docs/</code> and need no build step.
-  Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
+  Caasi CLI 0.3.0 — these pages live in <code>docs/</code> and need no build step.
+  Source: <a href="https://github.com/7a6172/caasi">github.com/7a6172/caasi</a>.
 </footer>
 </main>
 </div>

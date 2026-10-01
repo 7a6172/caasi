@@ -181,8 +181,14 @@ def start_run(
 ) -> RunRecord:
     """Launch *command* as a detached, tracked run. Returns the record."""
     base = runs_dir(config)
-    run_id = new_run_id(name)
+    base_id = new_run_id(name)
+    run_id = base_id
     run_dir = base / run_id
+    counter = 2
+    while run_dir.exists():  # same-second launches (e.g. `run restart`) stay unique
+        run_id = f"{base_id}-{counter}"
+        run_dir = base / run_id
+        counter += 1
     run_dir.mkdir(parents=True)
     _write_wrapper(run_dir)
 

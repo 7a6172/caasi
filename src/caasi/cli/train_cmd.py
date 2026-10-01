@@ -1,7 +1,10 @@
 """`caasi train` — train policies headlessly (Isaac Lab + PyTorch).
 
-Training is launched as a tracked background run; follow it with
-`caasi logs <run> -f` and manage it with `caasi run ...`.
+A domain door onto the canonical launcher (§5.4): translates training
+flags into script arguments, then delegates to
+:func:`caasi.cli.run_cmd.launch_experiment` so the run is tracked with
+its §4.7 provenance bundle. Follow it with `caasi logs <run> -f` and
+manage it with `caasi run ...`.
 """
 
 from __future__ import annotations
@@ -11,10 +14,10 @@ from typing import Optional
 
 import typer
 
-from .. import state
-from ..core import experiment, runs
+from ..core import experiment
 from ..i18n import _
 from ..utils import output
+from . import run_cmd
 
 
 def build_training_args(
@@ -54,7 +57,8 @@ def train_command(
     device: Optional[str] = typer.Option(None, "--device", help=_("train.flag.device")),
     dry_run: bool = typer.Option(False, "--dry-run", help=_("train.flag.dry_run")),
 ) -> None:
-    cfg = state.cfg()
+    # Preload only to read `headless` for flag translation; the canonical
+    # launcher reloads and owns the actual launch (surface errors identically).
     try:
         exp = experiment.load_experiment(config_path)
     except experiment.ExperimentError as exc:
@@ -64,31 +68,10 @@ def train_command(
         steps=steps, envs=envs, resume=resume, seed=seed, device=device,
         headless=exp.headless, extra=list(ctx.args),
     )
-    try:
-        command, env = experiment.build_command(exp, cfg, extra_args=extra_args)
-    except experiment.ExperimentError as exc:
-        output.fail(str(exc))
-        return
-
-    if dry_run:
-        output.echo(f"[bold]{_('sim.run.dry_title')}[/bold]")
-        output.echo(f"  command: {' '.join(command)}")
-        output.echo(f"  cwd:     {exp.work_dir}")
-        return
-
-    record = runs.start_run(
-        cfg,
-        name=exp.name,
-        command=command,
-        cwd=exp.work_dir,
-        env=env,
-        backend=exp.backend,
+    run_cmd.launch_experiment(
+        config_path,
         kind="train",
-        extra={
-            "experiment": str(exp.config_path),
-            "steps": steps,
-            "envs": envs,
-        },
+        extra_args=extra_args,
+        extra={"steps": steps, "envs": envs},
+        dry_run=dry_run,
     )
-    output.echo(f"[green]{_('sim.run.started', id=record.run_id)}[/green]")
-    output.echo(f"  [dim]{_('sim.run.watch', id=record.run_id)}[/dim]")

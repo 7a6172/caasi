@@ -1,4 +1,4 @@
-"""`caasi robot` / `caasi scene` / `caasi task` — component definitions.
+"""`caasi project robot` / `caasi project scene` / `caasi project task` — definitions.
 
 All three groups share the same file-based model (``<kind>s/<name>.yaml``
 inside the project), so the Typer apps are built from one factory.
@@ -110,7 +110,7 @@ def build_app(kind: str) -> typer.Typer:
             return
         if not payload:
             output.echo(
-                f"[yellow]{_('def.list_empty', kind=kind, cmd=f'caasi {kind} create')}[/yellow]"
+                f"[yellow]{_('def.list_empty', kind=kind, cmd=f'caasi project {kind} create')}[/yellow]"
             )
             return
         table = Table(header_style="bold", **output.table_styles())

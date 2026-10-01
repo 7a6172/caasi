@@ -112,38 +112,46 @@ def test_container_check_pass(runner, fake_docker):
     result = runner.invoke(app, ["container", "check", "--json"])
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
-    assert data["ok"] is True
-    assert [check["check"] for check in data["checks"]] == ["tool", "daemon", "nvidia-runtime"]
+    assert data["scope"] == "container"
+    assert data["result"] == "ready"
+    assert [item["name"] for item in data["items"]] == ["tool", "daemon", "nvidia-runtime"]
+    assert all(item["compatibility"] == "compatible" for item in data["items"])
 
     result = runner.invoke(app, ["container", "check"])
     assert result.exit_code == 0
-    assert "Container stack is ready" in result.output
+    assert "READY" in result.output
 
 
 def test_container_check_no_daemon(runner, tmp_path, monkeypatch):
     _make_fake_docker(tmp_path, monkeypatch, nvidia_runtime="nvidia", info_rc=1)
     result = runner.invoke(app, ["container", "check", "--json"])
-    assert result.exit_code == 1
+    assert result.exit_code == 3  # Check Contract: incompatible → exit 3
     data = json.loads(result.output)
-    assert data["checks"][0]["ok"] is True
-    assert data["checks"][1]["ok"] is False
-    assert data["checks"][2]["ok"] is False
+    assert data["result"] == "incompatible"
+    assert [item["compatibility"] for item in data["items"]] == [
+        "compatible",
+        "incompatible",
+        "missing",
+    ]
 
 
 def test_container_check_no_nvidia(runner, tmp_path, monkeypatch):
     _make_fake_docker(tmp_path, monkeypatch, nvidia_runtime="", info_rc=0)
     result = runner.invoke(app, ["container", "check"])
-    assert result.exit_code == 1
+    assert result.exit_code == 3
     assert "nvidia-container-toolkit" in result.output
 
 
 def test_container_check_without_tool(runner, monkeypatch):
     monkeypatch.setattr(containers_core, "find_container_tool", lambda: None)
     result = runner.invoke(app, ["container", "check", "--json"])
-    assert result.exit_code == 1
+    assert result.exit_code == 3
     data = json.loads(result.output)
-    assert data["ok"] is False
-    assert data["checks"][0]["detail"] == "No container tool found; install Docker or Podman first."
+    assert data["result"] == "incompatible"
+    assert data["items"][0]["compatibility"] == "missing"
+    assert data["items"][0]["note"] == (
+        "No container tool found; install Docker or Podman first."
+    )
 
 
 def test_container_run_dry_run(runner, fake_docker):

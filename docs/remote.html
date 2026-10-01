@@ -10,7 +10,7 @@
 <body>
 <header class="topbar">
   <a class="brand" href="index.html">Caa<span>si</span></a>
-  <span class="badge">v0.2.0</span>
+  <span class="badge">v0.3.0</span>
   <span class="tagline">Advanced: remote · container</span>
   <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
 </header>
@@ -28,6 +28,17 @@ SDK — it builds command lines, and every long-running one becomes a
 </p>
 
 <h2 id="remote">caasi remote</h2>
+<div class="callout note">
+  <div class="c-title">The 0.3.0 execution model</div>
+  <p>The seam for running work elsewhere is
+  <code>caasi run CONFIG --remote &lt;machine&gt; [--container &lt;img&gt;]</code>. Remote
+  <em>execution</em> and trust/pairing are deferred to <strong>v0.4.0</strong>, so today the
+  <code>remote</code> group remains <strong>management</strong>: <code>remote list</code>,
+  <code>remote connect</code> and <code>remote run</code> reach the configured machines over the
+  system <code>ssh</code> client, with <code>remote run</code> and <code>remote connect</code>
+  <em>de-emphasized</em> — not removed — as that management seam. Run identity is recorded locally
+  now, so it survives the SSH hop later.</p>
+</div>
 
 <h3 id="remote-config">Declaring remotes</h3>
 <p>Remotes live in your <a href="configuration.html#files">configuration</a> — global
@@ -210,6 +221,14 @@ fails, and <code>run</code> exits <code>1</code> with
     <tr><td><code>run</code></td><td>Run a command inside a container image as a tracked run.</td></tr>
   </tbody>
 </table>
+<div class="callout note">
+  <div class="c-title">Unchanged in 0.3.0 — and composable</div>
+  <p>The <code>container</code> group is unchanged: <code>list</code>, <code>status</code>,
+  <code>check</code>, <code>doctor</code>, <code>run</code>. <code>container check</code> emits the
+  shared <a href="environment.html#check">Check Contract</a>, so its <code>--json</code> is the
+  uniform report every gate produces. The composable future form of this page is
+  <code>caasi run CONFIG --remote &lt;machine&gt; --container &lt;img&gt;</code>.</p>
+</div>
 
 <h3 id="container-list">caasi container list</h3>
 <pre class="syn"><code>caasi container list [--json]</code></pre>
@@ -465,8 +484,8 @@ commands.</p>
 </div>
 
 <footer class="doc-footer">
-  Caasi CLI 0.2.0 — these pages live in <code>docs/</code> and need no build step.
-  Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
+  Caasi CLI 0.3.0 — these pages live in <code>docs/</code> and need no build step.
+  Source: <a href="https://github.com/7a6172/caasi">github.com/7a6172/caasi</a>.
 </footer>
 </main>
 </div>

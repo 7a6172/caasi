@@ -65,6 +65,9 @@ MESSAGES: dict[str, str] = {
     "doctor.flag.component": "Check a single component section only.",
     "doctor.flag.verbose": "Show details and hints for every check.",
     "doctor.flag.quiet": "Print nothing; exit 0 when ready, 1 when issues are found.",
+    "doctor.flag.details": (
+        "Explain every fail/warn in SECTION: Problem, Cause, Evidence, Impact, Action."
+    ),
     "doctor.unknown_component": "Unknown component '{component}'. Valid: {valid}",
     "doctor.summary_issues": "✘ {fails} issue(s) found, {warns} warning(s). Run with --verbose for hints.",
     "doctor.summary_warnings": "! Environment usable with {warns} warning(s).",
@@ -78,6 +81,7 @@ MESSAGES: dict[str, str] = {
     "doctor.section.isaac": "Isaac",
     "doctor.section.ros": "ROS 2",
     "doctor.section.robotics": "Robotics",
+    "doctor.section.project": "Project",
     "doctor.section.accelerated": "GPU-Accelerated Robotics",
     "doctor.section.physics": "Physics Engines",
     "doctor.section.assets": "Assets & USD",
@@ -180,6 +184,22 @@ MESSAGES: dict[str, str] = {
     "doctor.robotics.timeout": "probe timed out for '{package}'",
     "doctor.robotics.not_installed": "package '{package}' not found",
     "doctor.robotics.hint": "Install the {stack} packages into your ROS 2 distro.",
+    # project checks
+    "doctor.project.title": "Project manifest",
+    "doctor.project.no_project": "skipped (not inside a Caasi project)",
+    "doctor.project.no_project_hint": "Run 'caasi project init' to create one.",
+    "doctor.project.unparsable": "{file} could not be parsed",
+    "doctor.project.unparsable_hint": "Fix the YAML syntax or re-run 'caasi project init --force'.",
+    "doctor.project.schema": "Manifest schema",
+    "doctor.project.schema_unknown": "schema '{schema}' (this Caasi understands {known})",
+    "doctor.project.schema_hint": "Update Caasi or migrate the manifest to the current schema.",
+    "doctor.project.name": "Project name",
+    "doctor.project.name_missing": "'name' is missing",
+    "doctor.project.name_hint": "Set 'name:' in caasi.yaml.",
+    "doctor.project.components": "Registered components",
+    "doctor.project.components_none": "none registered",
+    "doctor.project.components_missing": "{count} component director(y/ies) missing",
+    "doctor.project.components_hint": "Recreate with 'caasi project add' (missing: {dirs}).",
     # ml checks
     "doctor.ml.torch": "PyTorch",
     "doctor.ml.tensorrt": "TensorRT",
@@ -216,6 +236,83 @@ MESSAGES: dict[str, str] = {
     "doctor.storage.unknown": "could not determine disk usage",
     "doctor.storage.detail": "{free} free at {path}",
     "doctor.storage.hint": "Dataset generation and recordings need substantial free space.",
+    # -- doctor --details (§19): Problem → Cause → Evidence → Impact → Action
+    "doctor.details.title": "Explanation — {section}",
+    "doctor.details.none": "Nothing to explain in {section}: no failing or warning checks.",
+    "doctor.explain.label.problem": "Problem",
+    "doctor.explain.label.cause": "Cause",
+    "doctor.explain.label.evidence": "Evidence",
+    "doctor.explain.label.impact": "Impact",
+    "doctor.explain.label.action": "Suggested action",
+    "doctor.explain.problem.fail": "'{name}' is not available.",
+    "doctor.explain.problem.warn": "'{name}' is available, but not in the state Caasi expects.",
+    "doctor.explain.cause.fail": "The probe ran to completion and found nothing usable.",
+    "doctor.explain.cause.warn": (
+        "The probe ran to completion; what it found is outside what Caasi has tested."
+    ),
+    "doctor.explain.no_evidence": "no evidence recorded for this check",
+    "doctor.explain.no_action": (
+        "no remedy recorded — change the environment, then re-run "
+        "'caasi doctor --details {section}'"
+    ),
+    # per-section impact: what breaks when this section reports a problem
+    "doctor.explain.impact.system": (
+        "Caasi targets Linux; on an unsupported OS or kernel every other result is unreliable."
+    ),
+    "doctor.explain.impact.hardware": (
+        "Too little CPU or RAM shows up as slow startup, killed processes and dropped frames."
+    ),
+    "doctor.explain.impact.nvidia": (
+        "Without a working NVIDIA driver and CUDA, GPU simulation and the Isaac ROS stacks cannot run."
+    ),
+    "doctor.explain.impact.graphics": (
+        "Isaac Sim needs Vulkan; without it the simulator fails to start or renders nothing."
+    ),
+    "doctor.explain.impact.python": (
+        "Caasi and the simulation stacks must agree on one Python; a mismatch breaks imports."
+    ),
+    "doctor.explain.impact.isaac": (
+        "Simulation entry points need an Isaac installation; nothing can be launched without one."
+    ),
+    "doctor.explain.impact.ros": (
+        "ROS 2 entry points (run / monitor / bridge) need an installed, sourced distribution."
+    ),
+    "doctor.explain.impact.robotics": (
+        "Navigation, manipulation and controller entry points need their ROS 2 packages installed."
+    ),
+    "doctor.explain.impact.project": (
+        "An unusable manifest means layout, compatibility checks and runs cannot be resolved here."
+    ),
+    "doctor.explain.impact.accelerated": (
+        "GPU-accelerated robotics stacks (Isaac ROS, Isaac Perceptor) will not start."
+    ),
+    "doctor.explain.impact.physics": (
+        "The physics engine drives simulation fidelity; a missing engine limits which scenarios run."
+    ),
+    "doctor.explain.impact.assets": (
+        "USD assets that cannot be resolved produce empty or broken scenes."
+    ),
+    "doctor.explain.impact.data": (
+        "Recording and dataset generation need a working rosbag2 / HDF5 toolchain."
+    ),
+    "doctor.explain.impact.platform": (
+        "Foundation-model and teleoperation entry points need their runtimes and devices."
+    ),
+    "doctor.explain.impact.ml": (
+        "Training and inference entry points need these libraries importable in the active Python."
+    ),
+    "doctor.explain.impact.vision": (
+        "Camera and point-cloud workflows need these libraries; other entry points are unaffected."
+    ),
+    "doctor.explain.impact.simulators": (
+        "Alternative simulation backends are unavailable; Isaac entry points are unaffected."
+    ),
+    "doctor.explain.impact.containers": (
+        "Containerized simulation and deployment entry points cannot run."
+    ),
+    "doctor.explain.impact.storage": (
+        "Recordings and generated datasets can fail mid-run when free space runs out."
+    ),
     # -- gpu --------------------------------------------------------------
     "gpu.help": "Inspect NVIDIA GPUs via nvidia-smi.",
     "gpu.unavailable": "GPU information unavailable ({error}).",
@@ -302,8 +399,10 @@ MESSAGES: dict[str, str] = {
     # -- runs ---------------------------------------------------------------------
     "run.help": "Manage simulation runs as first-class processes.",
     "run.flag.limit": "Number of runs to show.",
+    "run.flag.backend": "Only consider runs with this backend (e.g. 'sim', 'lab', 'python').",
     "run.arg.query": "Run id, unique id prefix, run name, or 'latest'.",
     "run.not_found": "No run matching '{query}'.",
+    "run.wrong_backend": "Run {id} has backend '{backend}', not '{wanted}'.",
     "run.no_runs": "No runs recorded yet.",
     "run.list_title": "Runs",
     "run.col.name": "Name",
@@ -331,6 +430,23 @@ MESSAGES: dict[str, str] = {
     "run.delete_running": "Run {id} is still active; stop it first or use --force.",
     "run.flag.force": "Stop the run first if it is still active.",
     "run.no_files": "No artifact files recorded.",
+    "run.start_help": "Start a tracked run from an experiment config (writes the provenance bundle).",
+    "run.start.flag.backend": "Launch with this backend instead of the config's: sim, lab, python.",
+    "run.start.bad_backend": "Unknown backend '{backend}' (expected one of {valid}).",
+    "run.start.backend_note": "Note: experiment backend is '{backend}', not '{wanted}'.",
+    "run.start.backend_override": (
+        "Note: experiment backend is '{backend}'; launching with '{wanted}' as requested."
+    ),
+    "run.restart_help": "Re-launch a run's recorded command as a new tracked run.",
+    "run.restarted": "Restarted run {old} as {id}.",
+    "run.restart.cwd_missing": "Recorded working directory no longer exists: {cwd}.",
+    "run.flag.component": "Only show lines tagged with this component (e.g. '[nav2]').",
+    "run.flag.errors": "Only show lines that look like errors.",
+    "run.flag.since": (
+        "Only show lines within this time window (e.g. 30s, 10m, 2h, 1d); "
+        "lines without a timestamp are excluded."
+    ),
+    "run.bad_since": "Invalid --since value '{since}' (expected e.g. 30s, 10m, 2h, 1d).",
     "run.list_help": "List runs.",
     "run.status_help": "Show run status.",
     "run.logs_help": "Show run logs.",
@@ -340,30 +456,42 @@ MESSAGES: dict[str, str] = {
     "run.delete_help": "Delete a run.",
     "run.inspect_help": "Inspect run artifacts.",
     "logs.help": "Show logs for a run (alias of 'caasi run logs').",
+    "start.help": "Start a tracked run from an experiment config (alias of 'caasi run start').",
+    # -- monitor --------------------------------------------------------------------
+    "monitor.help": "Monitor run and machine resources (CPU, RAM, GPU, VRAM, throughput).",
+    "monitor.arg.run": "Run to monitor (default: the latest run, or the machine alone).",
+    "monitor.flag.interval": "Seconds between refreshes.",
+    "monitor.flag.once": "Print a single snapshot and exit.",
+    "monitor.stopped": "Monitor stopped.",
+    "monitor.no_run": "No runs recorded — showing machine resources only.",
+    "monitor.col.metric": "Metric",
+    "monitor.col.value": "Value",
+    "monitor.row.run": "Run",
+    "monitor.row.status": "Status",
+    "monitor.row.cpu": "CPU",
+    "monitor.row.ram": "RAM",
+    "monitor.row.gpu": "GPU",
+    "monitor.row.vram": "VRAM",
+    "monitor.row.simulation": "Simulation",
+    "monitor.row.runtime": "Runtime",
+    "monitor.steps_unit": "steps/s",
+    "monitor.processes_title": "Top processes by memory",
+    "monitor.col.pid": "PID",
+    "monitor.col.rss": "RSS",
+    "monitor.col.command": "Command",
     # -- sim ------------------------------------------------------------------------
     "sim.help": "Run and control Isaac Sim experiments (headless by default).",
     "sim.run.config_help": "Path to an experiment configuration file (YAML).",
     "sim.run.name_help": "Run name (defaults to the experiment name).",
     "sim.run.dry_run_help": "Show the launch command and environment without starting a run.",
-    "sim.run.backend_note": "Note: experiment backend is '{backend}', not 'sim'.",
     "sim.run.dry_title": "Dry run — nothing was started:",
     "sim.run.started": "Run {id} started in the background.",
     "sim.run.watch": "Follow it with: caasi logs {id} -f",
     "sim.status.unresolved": "Isaac Sim is not registered (caasi config set tools.isaacsim...).",
-    "sim.status.no_active": "No active simulation runs.",
-    "sim.status.active_title": "Active Simulation Runs",
     "sim.check.verbose_help": "Show hints for every check, not only failures.",
     "sim.run_help": "Run an experiment configuration.",
-    "sim.status_help": "Simulation backend status.",
     "sim.check_help": "Check resources before launching.",
-    "sim.stop_help": "Stop a running simulation.",
-    "sim.pause_help": "Pause a running simulation.",
-    "sim.resume_help": "Resume a paused simulation.",
     "sim.headless_help": "Run an experiment with --headless --no-window forced.",
-    "sim.logs_help": "Show logs of a simulation run.",
-    "sim.logs.wrong_backend": (
-        "Run has backend '{backend}', not 'sim'; use: caasi run logs <query>"
-    ),
     "sim.extensions_help": "List extensions in the Isaac Sim install tree.",
     "sim.extensions.enabled_help": "Only list extensions preloaded (enabled) at startup.",
     "sim.extensions.user_help": "Only scan the extsUser directory.",
@@ -373,13 +501,11 @@ MESSAGES: dict[str, str] = {
     "sim.extensions.col.source": "Source",
     "sim.extensions.col.enabled": "Enabled",
     # -- lab --------------------------------------------------------------------------
-    "lab.help": "Run, train and evaluate Isaac Lab experiments.",
+    "lab.help": "Run and evaluate Isaac Lab experiments.",
     "lab.status_help": "Isaac Lab environment status.",
     "lab.run_help": "Run an experiment configuration with the lab backend.",
-    "lab.train_help": "Train a policy as a tracked background run.",
     "lab.play_help": "Play a trained policy (isaaclab.sh -p <play script>).",
     "lab.evaluate_help": "Evaluate a trained policy checkpoint.",
-    "lab.run.backend_note": "Note: experiment backend is '{backend}', not 'lab'.",
     "lab.flag.checkpoint": "Checkpoint path passed to the script as --checkpoint.",
     # -- init / project -----------------------------------------------------------------
     "init.help": "Create a new Caasi project scaffold.",
@@ -387,7 +513,7 @@ MESSAGES: dict[str, str] = {
     "init.flag.name": "Project name (defaults to the directory name).",
     "init.flag.force": "Overwrite an existing caasi.yaml.",
     "init.done": "Created project '{name}' at {path}",
-    "init.hint": "Next: create components with 'caasi robot create <name>'.",
+    "init.hint": "Next: create components with 'caasi project robot create <name>'.",
     "project.help": "Inspect and manage Caasi projects.",
     "project.info_help": "Show information about the current project.",
     "project.validate_help": "Validate the project layout and definitions.",
@@ -401,6 +527,183 @@ MESSAGES: dict[str, str] = {
     "project.row.experiments": "Experiments",
     "project.valid": "Project at {path} is valid.",
     "project.issues": "{count} issue(s) found:",
+    "project.row.version": "Version",
+    "project.row.schema": "Schema",
+    "project.row.components": "Components",
+    "project.row.requires": "Requires",
+    # -- project component management (v0.3.0 Layer 1) --------------------------------
+    "project.add_help": "Register a component and create its directories.",
+    "project.remove_help": "Unregister a component; remove its now-empty directories.",
+    "project.list_help": "List the component catalog and registration state.",
+    "project.inspect_help": "Inspect the manifest: schema, components, requires, definition counts.",
+    "project.add_file_help": "Place a file into its deterministic component directory.",
+    "project.config_help": "Show or edit this project's caasi.yaml config layer.",
+    "project.arg.component": "Component name (dotted 'isaac.lab' or underscore 'isaac_lab').",
+    "project.arg.domain": "Target domain (e.g. robot, isaac.sim, ros).",
+    "project.arg.kind": "File kind (e.g. urdf, usd, scene, config, launch, map).",
+    "project.arg.file": "Source file to place into the project.",
+    "project.flag.purge": "Delete non-empty component directories too.",
+    "project.add.unknown": "Unknown component '{name}'. Known: {known}.",
+    "project.add.done": "Added component '{name}':",
+    "project.remove.unknown": "Unknown component '{name}'.",
+    "project.remove.not_registered": "Component '{name}' is not registered.",
+    "project.remove.done": "Removed component '{name}'.",
+    "project.remove.kept": "kept non-empty '{dir}/' (use --purge to delete)",
+    "project.col.component": "Component",
+    "project.col.registered": "Added",
+    "project.col.dirs": "Directories",
+    "project.state.present": "present",
+    "project.state.missing": "not created",
+    "project.add_file.done": "Placed '{name}' at {path}.",
+    "project.config.show_help": "Print the project's caasi.yaml.",
+    "project.config.get_help": "Read a dotted key from the project's caasi.yaml.",
+    "project.config.set_help": "Write a dotted key into the project's caasi.yaml.",
+    "project.config.arg.key": "Dotted key (e.g. defaults.layout).",
+    "project.config.arg.value": "Value to store (parsed as YAML).",
+    "project.config.missing": "Key '{key}' is not set in this project.",
+    "project.config.done": "Set {key} = {value} in caasi.yaml.",
+    # -- env (v0.3.0 Layer 2) ---------------------------------------------------------
+    "env.help": "Inspect, fingerprint and compare the robotics environment.",
+    "env.inspect_help": "Live 'CPU-Z' panel of the whole environment.",
+    "env.fingerprint_help": "Collect the environment fingerprint and print its stable hash.",
+    "env.compare_help": "Diff two stored fingerprints, or the stored one against the current environment.",
+    "env.show_help": "Print the stored fingerprint and hash without re-collecting.",
+    "env.flag.save": "Persist the fingerprint under .caasi/environment/.",
+    "env.arg.left": "Stored fingerprint (file or directory); defaults to the project/user store.",
+    "env.arg.right": "Second fingerprint to compare; defaults to the live environment.",
+    "env.title": "Environment",
+    "env.empty": "(nothing detected)",
+    "env.section.system": "System",
+    "env.section.hardware": "CPU / Memory",
+    "env.section.gpu": "GPU",
+    "env.section.drivers": "Drivers",
+    "env.section.compilers": "Compilers",
+    "env.section.python": "Python",
+    "env.section.ros": "ROS 2",
+    "env.section.isaac": "Isaac",
+    "env.section.docker": "Docker",
+    "env.section.git": "Git",
+    "env.fingerprint.hash": "Fingerprint: {hash}",
+    "env.fingerprint.saved": "Saved fingerprint to {path}.",
+    "env.no_stored": "No stored fingerprint found — run 'caasi env fingerprint --save' first.",
+    "env.compare.stored": "stored",
+    "env.compare.current": "current",
+    "env.compare.not_found": "No fingerprint found at '{path}'.",
+    "env.compare.same": "No meaningful differences between {left} and {right}.",
+    "env.compare.differences": "{count} meaningful difference(s)",
+    "env.col.component": "Component",
+    "env.col.field": "Field",
+    "env.col.left": "Left",
+    "env.col.right": "Right",
+    "env.show.title": "Stored fingerprint",
+    "env.show.hash": "Hash",
+    "env.show.collected": "Collected",
+    "env.show.location": "Location",
+    "env.show.sections": "Sections",
+    # -- env lock / check contract (v0.3.0 Layer 3) -----------------------------------
+    "env.lock_help": "Record resolved component versions into caasi.lock.",
+    "env.lock.no_project": "Not inside a Caasi project — run 'caasi project init' first.",
+    "env.lock.written": "Wrote {path}.",
+    "env.lock.resolved": "{count} resolved version(s) recorded.",
+    "check.help": "Preflight compatibility: can this project/run work on this machine?",
+    "check.arg.scope": "What to check: 'project' (default) or 'run'.",
+    "check.arg.query": "Run id, prefix or name for 'check run' (default: latest).",
+    "check.title": "Compatibility Check",
+    "check.no_project": "Not inside a Caasi project — run 'caasi project init' first.",
+    "check.unknown_scope": "Unknown check scope '{scope}'. Valid: {valid}",
+    "check.run.not_found": "No run found for '{query}'.",
+    "check.scope.environment": "Environment",
+    "check.scope.project": "Project",
+    "check.scope.sim": "Simulation",
+    "check.scope.container": "Containers",
+    "check.scope.control": "ros2_control",
+    "check.scope.run": "Run",
+    "check.col.item": "Item",
+    "check.col.required": "Required",
+    "check.col.detected": "Detected",
+    "check.col.status": "Status",
+    "check.col.note": "Note",
+    "check.ladder.verified": "VERIFIED",
+    "check.ladder.compatible": "COMPATIBLE",
+    "check.ladder.untested": "UNVERIFIED",
+    "check.ladder.missing": "MISSING",
+    "check.ladder.incompatible": "INCOMPATIBLE",
+    "check.result.line": "Result: {result}",
+    "check.result.ready": "READY",
+    "check.result.warning": "WARNING",
+    "check.result.incompatible": "INCOMPATIBLE",
+    "check.note.no_fingerprint": "no stored fingerprint — run 'caasi env fingerprint --save'",
+    "check.note.not_detected": "not detected on this machine",
+    "check.note.no_version": "detected, but no version requirement to compare",
+    "check.note.no_requirements": "no requirements recorded in caasi.yaml",
+    "check.note.out_of_range": "detected {detected}, outside required '{required}' — not tested by Caasi",
+    "check.note.unverifiable": "cannot compare the detected version against '{required}'",
+    "check.note.verified": "tested and verified on this configuration",
+    "check.note.no_command": "run has no recorded command",
+    # -- audit ------------------------------------------------------------------------
+    "audit.help": "Account for a project and its reproducibility across six scopes.",
+    "audit.arg.scope": (
+        "What to audit: project, dependencies, environment, files, runs or "
+        "reproducibility (omit for all)."
+    ),
+    "audit.flag.fix": "Apply CAASI-owned safe fixes (creates missing CAASI directories only).",
+    "audit.title": "CAASI Audit",
+    "audit.no_project": "Not inside a Caasi project — run 'caasi project init' first.",
+    "audit.unknown_scope": "Unknown audit scope '{scope}'. Valid: {valid}",
+    "audit.scope.project": "PROJECT",
+    "audit.scope.dependencies": "DEPENDENCIES",
+    "audit.scope.environment": "ENVIRONMENT",
+    "audit.scope.files": "FILES",
+    "audit.scope.runs": "RUNS",
+    "audit.scope.reproducibility": "REPRODUCIBILITY",
+    "audit.result.line": "Result: {warnings} warnings, {errors} errors",
+    "audit.fix.summary": "Applied {count} safe fix(es).",
+    "audit.fix.created_dir": "Created missing directory '{dir}'",
+    # project
+    "audit.project.no_manifest": "Missing caasi.yaml",
+    "audit.project.invalid_manifest": "caasi.yaml is empty or invalid YAML",
+    "audit.project.bad_schema": "caasi.yaml: unknown schema '{schema}'",
+    "audit.project.valid_manifest": "Valid caasi.yaml",
+    "audit.project.no_name": "caasi.yaml: 'name' is missing",
+    "audit.project.dirty_tree": "Working tree has uncommitted changes",
+    "audit.project.clean_tree": "Clean working tree",
+    # dependencies
+    "audit.dependencies.none": "No dependencies declared",
+    "audit.dependencies.present": "{name} {detected}",
+    "audit.dependencies.warn": "{name}: {note}",
+    "audit.dependencies.unverified": "detected but not verified against a requirement",
+    "audit.dependencies.missing": "{name}: required but not detected",
+    # environment
+    "audit.environment.fingerprint": "Environment fingerprint recorded",
+    "audit.environment.no_fingerprint": "No environment fingerprint — run 'caasi env fingerprint --save'",
+    "audit.environment.gpu": "GPU detected",
+    "audit.environment.no_gpu": "No GPU detected",
+    "audit.environment.cuda": "CUDA {version}",
+    "audit.environment.no_cuda": "No CUDA toolkit detected",
+    "audit.environment.python_drift": "Python {current} differs from recorded {recorded}",
+    # files
+    "audit.files.dirs_present": "All known directories present",
+    "audit.files.missing_dir": "Missing directory '{dir}/'",
+    "audit.files.definitions_ok": "All definitions in correct locations",
+    "audit.files.bad_definition": "{file}: empty or wrong 'kind'",
+    # runs
+    "audit.runs.none": "No runs recorded",
+    "audit.runs.count": "{count} run(s) recorded",
+    "audit.runs.logs": "Logs available",
+    "audit.runs.no_logs": "Latest run has no logs",
+    "audit.runs.metrics": "Metrics available",
+    "audit.runs.no_metrics": "Latest run reported no metrics",
+    "audit.runs.orphaned": "Run directory '{name}' has no manifest (stale record)",
+    # reproducibility
+    "audit.repro.git_commit": "Git commit recorded",
+    "audit.repro.no_git_repo": "Not a git repository — no commit recorded",
+    "audit.repro.no_git": "git not available — cannot record a commit",
+    "audit.repro.fingerprint": "Environment fingerprint recorded",
+    "audit.repro.no_fingerprint": "No environment fingerprint recorded",
+    "audit.repro.lock": "Resolved versions locked (caasi.lock)",
+    "audit.repro.no_lock": "No caasi.lock — run 'caasi env lock'",
+    "audit.repro.bundle_complete": "Provenance bundle complete",
+    "audit.repro.incomplete_bundle": "Provenance bundle missing: {missing}",
     # -- setup ------------------------------------------------------------------------
     "setup.help": "Detect missing ecosystem components and guide their installation.",
     "setup.arg.component": (
@@ -597,32 +900,6 @@ MESSAGES: dict[str, str] = {
     ),
     "dataset.no_tool": "No download tool found for backend '{backend}'.",
     "dataset.downloading": "Dataset download started: {path}",
-    # -- synth -------------------------------------------------------------------
-    "synth.help": "Generate synthetic data with Isaac Sim Replicator.",
-    "synth.status_help": "Show what synthetic data generation can use on this machine.",
-    "synth.generate_help": "Run a generator experiment and collect its output into a dataset.",
-    "synth.preview_help": "Summarise a generated dataset (file counts, no image decoding).",
-    "synth.validate_help": "Check a generated dataset for consistency.",
-    "synth.arg.config": "Experiment YAML with `backend: sim` and a `script`.",
-    "synth.flag.output": "Write the dataset here instead of under `datasets/`.",
-    "synth.flag.dry_run": "Print the command without starting it.",
-    "synth.no_replicator": (
-        "Isaac Sim Replicator was not found ({targets}). Install Isaac Sim, or point "
-        "Caasi at it with `caasi config set catalog.sdg.replicator.paths [...]`."
-    ),
-    "synth.started": "Synthetic data generation started: {path}",
-    "synth.row.generator": "generator",
-    "synth.row.episodes": "episodes",
-    "synth.episodes_value": "{produced} produced, {declared} declared",
-    "synth.row.bytes": "size",
-    "synth.row.elapsed": "elapsed",
-    "synth.counts_title": "Files per directory",
-    "synth.col.dir": "directory",
-    "synth.col.files": "files",
-    "synth.valid": "Dataset at {path} is consistent.",
-    "synth.issues": "{count} issue(s) found:",
-    "synth.validate.episodes": "metadata declares {declared} episode(s) but rgb/ holds {produced}",
-    "synth.validate.parity": "{sub}/ holds {count} file(s) but rgb/ holds {rgb}",
     # -- teleop ------------------------------------------------------------------
     "teleop.help": "Drive a robot, record demonstrations, replay recorded bags.",
     "teleop.start_help": "Start a teleoperation stack (or an experiment carrying the robot's sim).",

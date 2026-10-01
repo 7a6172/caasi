@@ -10,7 +10,7 @@
 <body>
 <header class="topbar">
   <a class="brand" href="index.html">Caa<span>si</span></a>
-  <span class="badge">v0.2.0</span>
+  <span class="badge">v0.3.0</span>
   <span class="tagline">Runs: the process model behind every long-running command</span>
   <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
 </header>
@@ -102,6 +102,78 @@ timestamp-prefixed, sorting them sorts by time.</p>
 <code>Error: No run matching '&lt;query&gt;'.</code> (exit 1).</p>
 
 <h2 id="run">caasi run</h2>
+<p><code>caasi run</code> is the one command group for long-running work. <code>run start</code>
+launches a config on a chosen backend and writes its provenance bundle; <code>run list</code>
+shows every run, and the lifecycle verbs — <code>status</code>, <code>logs</code>,
+<code>stop</code>, <code>pause</code>, <code>resume</code>, <code>attach</code>,
+<code>restart</code>, <code>inspect</code>, <code>delete</code> — act on a run named by the
+<a href="#query">QUERY</a> argument. Two root aliases cover the commands you reach for most:
+<code>caasi start</code> → <code>run start</code> and <code>caasi logs</code> →
+<code>run logs</code>.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi run start experiments/wave.yaml --backend sim --name wave</span>
+<span class="ok">Run 20260905-142301-wave started in the background.</span>
+<span class="in">caasi run status latest</span>
+<span class="out">wave (20260905-142301-wave)
+  Status     running
+  Backend    sim</span>
+<span class="in">caasi run logs latest -f</span>
+<span class="dim"># follow until the run ends — Ctrl+C stops following, the run keeps going</span>
+<span class="in">caasi run stop latest</span>
+<span class="ok">Run 20260905-142301-wave stopped.</span>
+<span class="in">caasi run attach latest</span>
+<span class="dim"># replay both streams, then follow — Ctrl+C detaches, the run keeps going</span>
+<span class="in">caasi run restart latest</span>
+<span class="ok">Run 20260905-142301-wave restarted as 20260905-160412-wave.</span></span></code></pre>
+<div class="callout warn">
+  <div class="c-title">The sim control verbs moved under <code>run</code></div>
+  <p>In 0.3.0 <code>caasi sim status</code>, <code>sim stop</code>, <code>sim pause</code>,
+  <code>sim resume</code> and <code>sim logs</code> are gone. Drive simulation runs through the run
+  group instead — <code>caasi run status --backend sim</code>,
+  <code>caasi run stop --backend sim</code>, <code>caasi run logs &lt;query&gt;</code>. The verbs
+  <code>run list</code>, <code>status</code>, <code>stop</code>, <code>pause</code> and
+  <code>resume</code> all accept <code>--backend sim|lab|python</code> to filter or target runs by
+  backend.</p>
+</div>
+
+<h3 id="run-start">caasi run start</h3>
+<pre class="syn"><code>caasi run start CONFIG [--backend sim|lab|python] [--name NAME] [--dry-run] [--json]</code></pre>
+<p>The generic launcher: resolves the <code>CONFIG</code> file (an experiment YAML, for example),
+picks the backend, spawns the process detached and writes the run's provenance bundle. The root
+alias <code>caasi start CONFIG</code> is identical.</p>
+<table>
+  <thead><tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>--backend</code></td><td>str</td><td>—</td><td>Launcher to use: <code>sim</code>, <code>lab</code> or <code>python</code>.</td></tr>
+    <tr><td><code>--name</code></td><td>str</td><td>—</td><td>Human name for the run (feeds the run-id slug).</td></tr>
+    <tr><td><code>--dry-run</code></td><td>flag</td><td>off</td><td>Resolve and print the command without spawning a process.</td></tr>
+    <tr><td><code>--json</code></td><td>flag</td><td>off</td><td>The started run record (see <a href="#run-record-json">run record</a>).</td></tr>
+  </tbody>
+</table>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi run start experiments/wave.yaml --backend sim --name wave</span>
+<span class="ok">Run 20260905-142301-wave started in the background.</span>
+<span class="in">caasi start experiments/wave.yaml --dry-run</span>
+<span class="out">backend  sim
+command  /opt/isaac-sim-6.0/python.sh /home/you/demo/scripts/wave.py --steps 10000
+cwd      /home/you/demo/experiments</span>
+<span class="dim"># --dry-run resolves and prints the command; nothing is spawned</span></span></code></pre>
+<p>Every <code>run start</code> writes a <strong>provenance bundle</strong> into the run directory
+so the run can later be accounted for and reproduced — seven files: <code>manifest.yaml</code>,
+<code>environment.yaml</code>, <code>hardware.yaml</code>, <code>dependencies.yaml</code>,
+<code>configuration.yaml</code>, <code>git.json</code> and <code>processes.json</code>.
+<code>caasi run inspect latest --json | jq '.files'</code> lists them; the
+<a href="observability.html#provenance">provenance bundle</a> explains what each records.
+Provenance <strong>degrades honestly</strong>: no git or no repo → <code>git.json</code> is
+<code>{"available": false}</code>, never a fabricated commit.</p>
+
+<h3 id="run-restart">caasi run restart</h3>
+<pre class="syn"><code>caasi run restart QUERY [--backend sim|lab|python] [--json]</code></pre>
+<p>Restarts the matched run: if it is still active it is stopped first, then a fresh run is started
+from the same config — a new run id and provenance bundle, with the previous run left intact for
+comparison. Pass <code>--backend</code> to restart on a different launcher.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi run restart latest</span>
+<span class="ok">Run 20260905-142301-wave restarted as 20260905-160412-wave.</span>
+<span class="in">caasi run restart latest --backend lab --json | jq '.id'</span>
+<span class="out">"20260905-161230-wave"</span></span></code></pre>
 
 <h3 id="run-list">caasi run list</h3>
 <pre class="syn"><code>caasi run list [--limit|-n N] [--json]</code></pre>
@@ -197,15 +269,20 @@ runs are always deletable.</p>
 </div>
 
 <h2 id="logs">caasi logs</h2>
-<p><code>caasi logs QUERY</code> is a top-level alias of <code>caasi run logs QUERY</code> — the
-command you will use most.</p>
-<pre class="syn"><code>caasi logs QUERY [--lines|-n N] [--follow|-f] [--stream|-s stdout|stderr]</code></pre>
+<p><code>caasi logs QUERY</code> is a thin top-level alias of <code>caasi run logs QUERY</code> —
+one underlying operation, and the command you will use most. It reads a run's captured
+stdout/stderr and can aggregate and filter it by component, error level or time window.</p>
+<pre class="syn"><code>caasi logs QUERY [--lines|-n N] [--follow|-f] [--stream|-s stdout|stderr] [--component NAME] [--errors] [--since 30s|10m|2h|1d] [--json]</code></pre>
 <table>
   <thead><tr><th>Option</th><th>Short</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
   <tbody>
     <tr><td><code>--lines</code></td><td><code>-n</code></td><td>int</td><td><code>50</code></td><td>Number of trailing lines to show.</td></tr>
     <tr><td><code>--follow</code></td><td><code>-f</code></td><td>flag</td><td>off</td><td>Tail the log until the run ends; Ctrl+C stops following (the run keeps going).</td></tr>
     <tr><td><code>--stream</code></td><td><code>-s</code></td><td>str</td><td><code>stdout</code></td><td>Which log file: <code>stdout</code> or <code>stderr</code>.</td></tr>
+    <tr><td><code>--component</code></td><td></td><td>str</td><td>all</td><td>Only lines tagged with this component (e.g. <code>nav2</code>).</td></tr>
+    <tr><td><code>--errors</code></td><td></td><td>flag</td><td>off</td><td>Only lines that look like errors.</td></tr>
+    <tr><td><code>--since</code></td><td></td><td>str</td><td>—</td><td>Time window: <code>30s</code>, <code>10m</code>, <code>2h</code>, <code>1d</code>. Untimestamped lines are excluded.</td></tr>
+    <tr><td><code>--json</code></td><td></td><td>flag</td><td>off</td><td>Structured log records instead of plain text.</td></tr>
   </tbody>
 </table>
 <pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi logs latest -n 3</span>
@@ -213,11 +290,18 @@ command you will use most.</p>
 [14:41:07] step 10000/10000 fps 244.1
 [14:41:07] done.</span>
 <span class="in">caasi logs latest -f -s stderr</span>
-<span class="out">…follows stderr live until the run ends…</span></span></code></pre>
+<span class="out">…follows stderr live until the run ends…</span>
+<span class="in">caasi run logs latest --component nav2 --errors</span>
+<span class="out">[14:23:31] [nav2] [ERROR] planner: no valid path to goal
+[14:23:44] [nav2] [ERROR] controller: aborted — recovery triggered</span>
+<span class="in">caasi run logs latest --since 10m -n 200</span>
+<span class="dim"># only lines from the last 10 minutes; untimestamped lines are excluded</span></span></code></pre>
 <p>Follow mode stops automatically when the run reaches <code>succeeded</code>,
 <code>failed</code> or <code>stopped</code>. Errors (exit 1): unknown run, unknown
-<code>--stream</code> value, or the log file does not exist. No <code>--json</code> — logs are
-already plain text.</p>
+<code>--stream</code> value, or the log file does not exist. <code>--component</code>,
+<code>--errors</code> and <code>--since</code> narrow the captured lines (<code>--since</code>
+drops untimestamped ones); <code>--json</code> emits structured log records instead of plain
+text.</p>
 
 <h3 id="run-attach">caasi run attach</h3>
 <pre class="syn"><code>caasi run attach QUERY</code></pre>
@@ -237,7 +321,7 @@ together, each line tagged with its stream. Ctrl+C detaches — the run keeps go
   <tbody>
     <tr><td>Streams</td><td>one at a time — <code>--stream stdout|stderr</code></td><td>both, interleaved, each line prefixed <code>[stdout]</code> / <code>[stderr]</code></td></tr>
     <tr><td>History</td><td>the last <code>--lines N</code> (default 50), then follows from the end of the file</td><td>everything from the start of both logs, then follows</td></tr>
-    <tr><td>Options</td><td><code>-n</code>, <code>-f</code>, <code>-s</code></td><td>none beyond <code>QUERY</code> — no <code>--json</code></td></tr>
+    <tr><td>Options</td><td><code>-n</code>, <code>-f</code>, <code>-s</code>, <code>--component</code>, <code>--errors</code>, <code>--since</code>, <code>--json</code></td><td>none beyond <code>QUERY</code> — no <code>--json</code></td></tr>
     <tr><td>Ctrl+C</td><td>stops following, silently</td><td>detaches and says so</td></tr>
   </tbody>
 </table>
@@ -261,12 +345,12 @@ Run 20260905-142301-wave deleted.</span></span></code></pre>
 
 <div class="page-nav">
   <a class="prev" href="configuration.html"><span class="pn-label">Previous</span><span class="pn-title">← Configuration</span></a>
-  <a class="next" href="projects.html"><span class="pn-label">Next</span><span class="pn-title">Projects →</span></a>
+  <a class="next" href="observability.html"><span class="pn-label">Next</span><span class="pn-title">Observability →</span></a>
 </div>
 
 <footer class="doc-footer">
-  Caasi CLI 0.2.0 — these pages live in <code>docs/</code> and need no build step.
-  Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
+  Caasi CLI 0.3.0 — these pages live in <code>docs/</code> and need no build step.
+  Source: <a href="https://github.com/7a6172/caasi">github.com/7a6172/caasi</a>.
 </footer>
 </main>
 </div>

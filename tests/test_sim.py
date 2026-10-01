@@ -77,48 +77,19 @@ def test_sim_run_starts_and_finishes(runner, tmp_path):
     assert "experiment-work" in (record.directory / "stdout.log").read_text()
 
 
-def test_sim_status_without_tool(runner):
-    result = runner.invoke(app, ["sim", "status"])
-    assert result.exit_code == 0
-    assert "not registered" in result.output
-    assert "No active simulation runs" in result.output
-
-
-def test_sim_status_json(runner):
-    result = runner.invoke(app, ["sim", "status", "--json"])
-    assert result.exit_code == 0
-    data = json.loads(result.output)
-    assert data["backend"]["tool"] == "isaacsim"
-    assert data["backend"]["path"] is None
-    assert data["active_runs"] == []
-
-
 def test_sim_check_fails_without_isaac(runner):
     result = runner.invoke(app, ["sim", "check"])
-    assert result.exit_code == 1
+    assert result.exit_code == 3  # Check Contract: incompatible → exit 3
     assert "Isaac Sim" in result.output
 
 
-def test_sim_controls_sim_runs(runner):
-    runs.start_run(
-        state.cfg(), name="sim-sleeper", command=["sleep", "30"], backend="sim", kind="test"
-    )
-
-    result = runner.invoke(app, ["sim", "status"])
+def test_sim_folded_verbs_removed(runner):
+    # v0.3.0 IA: sim status/stop/pause/resume/logs fold into `run --backend sim`.
+    result = runner.invoke(app, ["sim", "--help"])
     assert result.exit_code == 0
-    assert "sim-sleeper" in result.output
-
-    result = runner.invoke(app, ["sim", "pause", "latest"])
-    assert result.exit_code == 0
-    assert "paused" in result.output
-
-    result = runner.invoke(app, ["sim", "resume", "latest"])
-    assert result.exit_code == 0
-    assert "resumed" in result.output
-
-    result = runner.invoke(app, ["sim", "stop", "latest"])
-    assert result.exit_code == 0
-    assert "stopped" in result.output
+    for verb in ("status", "stop", "pause", "resume", "logs"):
+        assert verb not in result.output
+        assert runner.invoke(app, ["sim", verb, "latest"]).exit_code != 0
 
 
 def test_sim_run_json_flag_prints_pure_json(runner, tmp_path):
@@ -132,40 +103,6 @@ def test_sim_run_json_flag_prints_pure_json(runner, tmp_path):
     record = runs.find_run(state.cfg(), "json-demo")
     _wait_finished(record)
     assert runs.effective_status(record) == runs.TERMINAL_OK
-
-
-def test_sim_logs_tails_sim_runs(runner):
-    runs.start_run(
-        state.cfg(),
-        name="log-sim",
-        command=["bash", "-c", "echo sim-log-line; sleep 30"],
-        backend="sim",
-        kind="test",
-    )
-    record = runs.find_run(state.cfg(), "log-sim")
-    log = record.directory / "stdout.log"
-    deadline = time.monotonic() + 5.0
-    while time.monotonic() < deadline and "sim-log-line" not in log.read_text():
-        time.sleep(0.05)
-    try:
-        result = runner.invoke(app, ["sim", "logs", "log-sim"])
-        assert result.exit_code == 0
-        assert "sim-log-line" in result.output
-    finally:
-        runs.stop_run(record)
-
-
-def test_sim_logs_rejects_other_backends(runner):
-    runs.start_run(
-        state.cfg(), name="py-run", command=["sleep", "30"], backend="python", kind="test"
-    )
-    record = runs.find_run(state.cfg(), "py-run")
-    try:
-        result = runner.invoke(app, ["sim", "logs", "py-run"])
-        assert result.exit_code == 1
-        assert "not 'sim'" in all_output(result)
-    finally:
-        runs.stop_run(record)
 
 
 def test_sim_extensions_lists_tree(runner, fake_isaac_tree):

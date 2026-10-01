@@ -4,12 +4,12 @@ build-backend = "hatchling.build"
 
 [project]
 name = "caasi"
-version = "0.2.0"
+version = "0.3.0"
 description = "A lightweight, CLI-first orchestration layer for NVIDIA Isaac Sim, Isaac Lab and the robotics ecosystem."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "a6y3ap" }]
+authors = [{ name = "7a6172" }]
 keywords = ["caasi", "isaac", "isaac-sim", "isaac-lab", "robotics", "cli", "ros2", "simulation"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -34,10 +34,10 @@ dependencies = [
 dev = ["pytest>=8.0"]
 
 [project.urls]
-Homepage = "https://github.com/a6y3ap/caasi"
-Repository = "https://github.com/a6y3ap/caasi"
-Documentation = "https://a6y3ap.github.io/caasi/"
-Issues = "https://github.com/a6y3ap/caasi/issues"
+Homepage = "https://github.com/7a6172/caasi"
+Repository = "https://github.com/7a6172/caasi"
+Documentation = "https://7a6172.github.io/caasi/"
+Issues = "https://github.com/7a6172/caasi/issues"
 
 [project.scripts]
 caasi = "caasi.cli.main:run"

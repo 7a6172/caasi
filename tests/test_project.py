@@ -15,7 +15,7 @@ def test_create_project(tmp_path):
     for sub in projects.PROJECT_DIRS:
         assert (root / sub).is_dir()
     meta = projects.load_project_meta(root)
-    assert meta == {"kind": "project", "name": "warehouse", "version": 1}
+    assert meta == {"schema": 1, "name": "warehouse", "version": "0.0.0"}
 
 
 def test_create_project_custom_name_and_twice(tmp_path):

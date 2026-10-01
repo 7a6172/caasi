@@ -10,7 +10,7 @@
 <body>
 <header class="topbar">
   <a class="brand" href="index.html">Caa<span>si</span></a>
-  <span class="badge">v0.2.0</span>
+  <span class="badge">v0.3.0</span>
   <span class="tagline">Environment: doctor · gpu · system · info · version</span>
   <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
 </header>
@@ -26,10 +26,19 @@ environment and the detected ecosystem — all read-only, all scriptable.
 </p>
 
 <h2 id="doctor">caasi doctor</h2>
-<p>Runs the full environment diagnostics suite: 18 sections, each made of small independent
+<p>Runs the full environment diagnostics suite: 19 sections, each made of small independent
 checks. Every check reports one of four statuses and, when useful, a fix hint.</p>
 
-<pre class="syn"><code>caasi doctor [--component|-c NAME] [--verbose] [--quiet|-q] [--json]</code></pre>
+<div class="callout note">
+  <div class="c-title">Doctor stays in its lane</div>
+  <p><code>doctor</code> answers <em>what's wrong with my environment?</em> — is this machine
+  capable? It does <strong>not</strong> absorb <code>check</code> (can this project work here?) or
+  <code>audit</code> (can I account for and reproduce it?). Those remain separate verbs — see the
+  <a href="observability.html#verbs">five-verb rule</a> and the <a href="#check">Check
+  Contract</a> below.</p>
+</div>
+
+<pre class="syn"><code>caasi doctor [--component|-c NAME] [--verbose] [--quiet|-q] [--details SECTION] [--json]</code></pre>
 
 <h3>Options</h3>
 <table>
@@ -38,9 +47,16 @@ checks. Every check reports one of four statuses and, when useful, a fix hint.</
     <tr><td><code>--component</code></td><td><code>-c</code></td><td>str</td><td>all</td><td>Run a single section only (see table below).</td></tr>
     <tr><td><code>--verbose</code></td><td></td><td>flag</td><td>off</td><td>Show details and hints for <em>every</em> check, not only problems.</td></tr>
     <tr><td><code>--quiet</code></td><td><code>-q</code></td><td>flag</td><td>off</td><td>Print nothing; only the exit code speaks.</td></tr>
+    <tr><td><code>--details</code></td><td></td><td>str</td><td>off</td><td>Expand one section into its full <strong>Problem / Cause / Evidence / Impact / Action</strong> breakdown.</td></tr>
     <tr><td><code>--json</code></td><td></td><td>flag</td><td>off</td><td>Machine-readable report.</td></tr>
   </tbody>
 </table>
+
+<p><code>--details &lt;section&gt;</code> renders the expanded
+<strong>Problem / Cause / Evidence / Impact / Action</strong> breakdown for a single section — the
+deep-dive behind the one-line check statuses. It is the deepest read-only view <code>doctor</code>
+offers, and everything it reports is still machine capability, never a project-compatibility
+verdict (that is <a href="#check"><code>check</code></a>).</p>
 
 <h3>What gets checked</h3>
 <table>
@@ -64,6 +80,7 @@ checks. Every check reports one of four statuses and, when useful, a fix hint.</
     <tr><td><code>simulators</code></td><td>Gazebo, MuJoCo (skipped when absent)</td></tr>
     <tr><td><code>containers</code></td><td>Docker, Podman (warns if neither)</td></tr>
     <tr><td><code>storage</code></td><td>Free disk on <code>paths.runs</code> (fails &lt; 5 GiB, warns &lt; 20 GiB)</td></tr>
+    <tr><td><code>project</code></td><td>Project context — the active <code>caasi</code> project and its registered components (skipped outside a project)</td></tr>
   </tbody>
 </table>
 <p>The five sections added in 0.2.0 — <code>accelerated</code>, <code>physics</code>,
@@ -367,7 +384,7 @@ everything Caasi was able to detect about the ecosystem.</p>
 <pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi info</span>
 <span class="out">CLI
   Name        caasi
-  Version     0.2.0
+  Version     0.3.0
   Python      3.11.9 (/home/you/caasi/.venv/bin/python)
 Configuration
   Language    en
@@ -392,12 +409,196 @@ detected). Detection failures are data, never errors: exit code is always <code>
 <h2 id="version">caasi version</h2>
 <pre class="syn"><code>caasi version [--json]        # or the global flag: caasi --version</code></pre>
 <pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi version</span>
-<span class="out">caasi 0.2.0</span>
+<span class="out">caasi 0.3.0</span>
 <span class="in">caasi version --json</span>
 <span class="out">{
   "name": "caasi",
-  "version": "0.2.0"
+  "version": "0.3.0"
 }</span></span></code></pre>
+
+<h2 id="env">caasi env</h2>
+<p>The <code>env</code> group turns the read-only inspection above into a <strong>stable,
+comparable fingerprint</strong> of the machine and toolchain. Five subcommands:
+<code>inspect</code> shows a live panel, <code>fingerprint</code> collects one and prints its hash,
+<code>lock</code> records resolved component versions, <code>compare</code> diffs two fingerprints
+and <code>show</code> reprints a stored one. Only <code>fingerprint --save</code> and
+<code>lock</code> write anything; the rest are read-only.</p>
+
+<h3 id="env-inspect">caasi env inspect</h3>
+<p>A live “CPU-Z”-style panel of everything Caasi can see right now, grouped into
+<code>system</code>, <code>cpu</code>, <code>memory</code>, <code>gpu</code>, <code>nvidia</code>,
+<code>compilers</code>, <code>python</code>, <code>ros</code>, <code>isaac</code>,
+<code>docker</code> and <code>git</code>. Nothing is collected or stored — it is
+<code>caasi info</code> widened to the whole machine.</p>
+<pre class="syn"><code>caasi env inspect</code></pre>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi env inspect</span>
+<span class="out">system
+  OS          Ubuntu 24.04.1 LTS (x86_64)
+  Kernel      6.8.0-45-generic
+cpu
+  Model       AMD Ryzen 9 7950X (32 cores)
+memory
+  Total       62.7 GiB    Available  41.2 GiB
+gpu
+  0           NVIDIA GeForce RTX 4090 (24.0 GiB)
+nvidia
+  Driver      550.107.02    CUDA  12.4
+compilers
+  gcc         13.2.0
+  clang       (not found)
+python
+  Version     3.11.9 (/home/you/caasi/.venv/bin/python)
+ros
+  Distro      jazzy
+isaac
+  Isaac Sim   6.0 (/opt/isaac-sim-6.0)
+  Isaac Lab   (not detected)
+docker
+  docker      26.1.3 (daemon reachable)
+git
+  git         2.43.0</span></span></code></pre>
+
+<h3 id="env-fingerprint">caasi env fingerprint</h3>
+<p>Collects the fingerprint and prints its <strong>stable hash</strong>,
+<code>caasi-env-sha256:…</code>. Volatile values — free memory, load, running processes,
+timestamps — are deliberately excluded, so the same machine and toolchain always produce the same
+hash. That determinism is what makes two fingerprints comparable across runs, machines and CI
+jobs. <code>--save</code> persists the snapshot under <code>.caasi/environment/</code> as a set of
+<code>*.yaml</code> files plus <code>fingerprint.json</code>.</p>
+<pre class="syn"><code>caasi env fingerprint [--save] [--json]</code></pre>
+<table>
+  <thead><tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>--save</code></td><td>flag</td><td>off</td><td>Persist the fingerprint under <code>.caasi/environment/</code> (<code>*.yaml</code> + <code>fingerprint.json</code>) so <code>show</code> and <code>compare</code> can reuse it.</td></tr>
+    <tr><td><code>--json</code></td><td>flag</td><td>off</td><td>Emit the fingerprint object, including its <code>hash</code>, as JSON.</td></tr>
+  </tbody>
+</table>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi env fingerprint --save</span>
+<span class="out">Collected 11 groups (system, cpu, memory, gpu, nvidia, compilers, python, ros, isaac, docker, git).
+Saved under .caasi/environment/ — environment.yaml, hardware.yaml, … + fingerprint.json.
+caasi-env-sha256:9f2c1a7b4e8d3051c6a4b2e9d7f1038542ab6c9e1d4f7083b5c2a9e6d1f4078b</span>
+<span class="in">caasi env fingerprint --save --json | jq '.hash'</span>
+<span class="out">"caasi-env-sha256:9f2c1a7b4e8d3051c6a4b2e9d7f1038542ab6c9e1d4f7083b5c2a9e6d1f4078b"</span></span></code></pre>
+
+<h3 id="env-lock">caasi env lock</h3>
+<p>Records the <em>resolved</em> versions of the project's components into <code>caasi.lock</code>
+— the environment counterpart of a dependency lockfile, so a later
+<a href="observability.html#audit"><code>audit</code></a> can tell whether today's machine still
+matches the one that produced a result.</p>
+<pre class="syn"><code>caasi env lock [--json]</code></pre>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi env lock</span>
+<span class="ok">Locked resolved component versions into caasi.lock.</span></span></code></pre>
+
+<h3 id="env-compare">caasi env compare</h3>
+<p>Diffs two fingerprints and reports only the <strong>meaningfully-different</strong> components —
+the volatile values excluded at collection time never surface as noise. With no arguments it
+compares the latest stored fingerprint against the <em>live</em> environment; pass one or two
+stored names or hashes to compare snapshots instead.</p>
+<pre class="syn"><code>caasi env compare [left] [right] [--json]</code></pre>
+
+<h3 id="env-show">caasi env show</h3>
+<p>Prints the stored fingerprint and its hash <em>without</em> re-collecting anything — the cheap
+way to read back what <code>fingerprint --save</code> wrote.</p>
+<pre class="syn"><code>caasi env show [--json]</code></pre>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi env show &amp;&amp; caasi env compare</span>
+<span class="out">Stored fingerprint
+  Hash       caasi-env-sha256:9f2c1a7b4e8d3051c6a4b2e9d7f1038542ab6c9e1d4f7083b5c2a9e6d1f4078b
+  Collected  2026-09-09T10:15:02Z
+  Groups     11
+
+Comparing caasi-env-sha256:9f2c1a7b…078b → live environment
+  ~ nvidia.driver   550.107.02 → 555.42.02
+  ~ isaac.sim       6.0 → 6.1
+  = 9 other groups unchanged (volatile values excluded)
+Result: 2 meaningful difference(s)</span></span></code></pre>
+
+<h2 id="check">caasi check</h2>
+<p>The second verb: <strong>can this work here?</strong> Where <code>doctor</code> asks whether the
+machine is capable, <code>check</code> asks whether <em>this project</em> — or one specific run —
+is compatible with the machine it is about to execute on. It is a preflight gate, and it requires a
+project: outside one it fails with a <code>project init</code> hint instead of guessing what to
+check. See the <a href="observability.html#verbs">five-verb rule</a> for how <code>check</code>
+relates to <code>doctor</code>, <code>test</code>, <code>validate</code> and <code>audit</code>.</p>
+<pre class="syn"><code>caasi check [project|run] [QUERY] [--json]</code></pre>
+<table>
+  <thead><tr><th>Argument</th><th>Values</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>[scope]</code></td><td><code>project</code> (default) · <code>run</code></td><td><code>project</code> preflights the registered components against this machine; <code>run</code> preflights one recorded run.</td></tr>
+    <tr><td><code>[query]</code></td><td>run id · prefix · name</td><td>For <code>check run</code> only — which run to preflight (default <code>latest</code>).</td></tr>
+    <tr><td><code>--json</code></td><td>flag</td><td>Emit the <code>CheckReport</code> JSON instead of the human ladder.</td></tr>
+  </tbody>
+</table>
+<div class="callout note">
+  <div class="c-title">Requires a project</div>
+  <p><code>check</code> preflights a <em>project</em> against the machine, so it must run inside
+  one. Outside a project it fails with a <code>project init</code> hint rather than reporting a
+  meaningless all-clear.</p>
+</div>
+<p>The root <code>check</code> is an <strong>orchestrator</strong>: it runs only the checkers
+relevant to the project's registered components and merges them into a single report. The domain
+specialists — <a href="simulation.html#sim-control"><code>sim check</code></a>,
+<a href="remote.html#container"><code>container check</code></a> and
+<a href="ros.html#control"><code>control check</code></a> — emit the <em>same</em> Check Contract
+for their own slice. There is <strong>no <code>check sim</code> alias</strong>: the scope argument
+is <code>project</code> or <code>run</code>, never a domain.</p>
+
+<h3 id="check-contract">The Check Contract</h3>
+<p>Every <code>check</code> entry point — root or specialist — returns the same uniform JSON: a
+list of <code>CheckItem</code>s wrapped in a <code>CheckReport</code>.</p>
+<pre><code>CheckItem {
+  name           string    // what is being checked, e.g. "isaac_sim"
+  required       bool      // must it be present for this project?
+  detected       string    // the value found, or empty when absent
+  compatibility  enum      // "compatible" | "untested" | "missing" | "incompatible"
+  note           string    // human context / fix hint
+}
+
+CheckReport {
+  scope      string        // "project" | "run" for the orchestrator; the domain for a specialist
+  items      CheckItem[]   // one entry per thing checked
+  missing    string[]      // names of required-but-missing items
+  warnings   string[]      // names that are untested or otherwise need attention
+  result     enum          // "ready" | "warning" | "incompatible"
+}</code></pre>
+
+<h3 id="check-ladder">The confidence ladder</h3>
+<p>The human report renders each item's <code>compatibility</code> as one rung of a ladder, then
+collapses the whole report to a single <code>Result:</code> line.</p>
+<table>
+  <thead><tr><th>Ladder rung</th><th><code>compatibility</code></th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><span class="pill ok">VERIFIED</span></td><td><code>compatible</code> (required)</td><td>A required component is present and known to work.</td></tr>
+    <tr><td><span class="pill ok">COMPATIBLE</span></td><td><code>compatible</code></td><td>Present and known to work (not strictly required).</td></tr>
+    <tr><td><span class="pill warn">UNVERIFIED</span></td><td><code>untested</code></td><td>Present, but this exact version has not been validated against the project.</td></tr>
+    <tr><td><span class="pill warn">WARNING</span></td><td><code>missing</code></td><td>A component was not detected.</td></tr>
+    <tr><td><span class="pill fail">INCOMPATIBLE</span></td><td><code>incompatible</code></td><td>Present, but known not to work here — blocks the launch.</td></tr>
+  </tbody>
+</table>
+<table>
+  <thead><tr><th><code>result</code></th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>ready</code></td><td>Every required component is compatible — clear to launch.</td></tr>
+    <tr><td><code>warning</code></td><td>Something is untested or missing, but nothing is blocking.</td></tr>
+    <tr><td><code>incompatible</code></td><td>A required component cannot work here — do not launch.</td></tr>
+  </tbody>
+</table>
+<p>The human report prints the verdict as an uppercase
+<code>Result: READY|WARNING|INCOMPATIBLE</code> line, and <code>check</code> exits <code>3</code>
+when that result is <code>incompatible</code> — a hard preflight failure — so it drops straight
+into CI and launch scripts as a gate.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi check</span>
+<span class="out">Preflight check — project: wave-demo
+
+  VERIFIED      isaac_sim     6.0 (required)
+  COMPATIBLE    ros2          jazzy
+  UNVERIFIED    pytorch       2.4.0 (not validated against Isaac Sim 6.0)
+  WARNING       tensorrt      not detected
+
+Result: WARNING</span>
+<span class="in">caasi check --json | jq '.result'</span>
+<span class="out">"warning"</span>
+<span class="in">caasi sim check --json | jq '.scope'</span>
+<span class="out">"sim"</span></span></code></pre>
 
 <div class="page-nav">
   <a class="prev" href="index.html"><span class="pn-label">Previous</span><span class="pn-title">← Overview</span></a>
@@ -405,8 +606,8 @@ detected). Detection failures are data, never errors: exit code is always <code>
 </div>
 
 <footer class="doc-footer">
-  Caasi CLI 0.2.0 — these pages live in <code>docs/</code> and need no build step.
-  Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
+  Caasi CLI 0.3.0 — these pages live in <code>docs/</code> and need no build step.
+  Source: <a href="https://github.com/7a6172/caasi">github.com/7a6172/caasi</a>.
 </footer>
 </main>
 </div>

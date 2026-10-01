@@ -24,7 +24,11 @@ from caasi.core import catalog
 
 from .conftest import all_output
 from .test_ros_cmd import no_ros2, wait_for_run
-from .test_synth_cmd import manifest_of
+
+
+def manifest_of(run_dir):
+    return yaml.safe_load((run_dir / "manifest.yaml").read_text(encoding="utf-8"))
+
 
 #: Experiment script: reports the engine env var Caasi exported to it.
 GEN_SCRIPT = textwrap.dedent(

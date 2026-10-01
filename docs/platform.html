@@ -10,7 +10,7 @@
 <body>
 <header class="topbar">
   <a class="brand" href="index.html">Caa<span>si</span></a>
-  <span class="badge">v0.2.0</span>
+  <span class="badge">v0.3.0</span>
   <span class="tagline">Physics &amp; foundation models: physics · warp · groot · cosmos</span>
   <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
 </header>
@@ -34,13 +34,13 @@ installed — fails honestly and names the config key that would point at it.
     <tr><td><code>caasi warp</code></td><td><code>warp</code> — kind <code>python</code></td><td>status · test · benchmark</td><td>NVIDIA Warp: a device probe in a subprocess, your benchmark script as a run.</td></tr>
     <tr><td><code>caasi groot</code></td><td><code>groot</code> — kind <code>python</code>, tool <code>groot</code></td><td>status · setup · run · train · evaluate</td><td>The Isaac GR00T repo's own installer, module and scripts, through its own interpreter.</td></tr>
     <tr><td><code>caasi cosmos</code></td><td><code>cosmos</code> — kind <code>python</code></td><td>status · run · dataset</td><td>The Cosmos CLI (or <code>-m cosmos_predict1</code>) with your arguments forwarded verbatim.</td></tr>
-    <tr><td><code>caasi scene reconstruct</code></td><td>capability <code>nurec</code> of <code>usd</code></td><td>—</td><td>A NuRec CLI that turns a capture into OpenUSD.</td></tr>
+    <tr><td><code>caasi project scene reconstruct</code></td><td>capability <code>nurec</code> of <code>usd</code></td><td>—</td><td>A NuRec CLI that turns a capture into OpenUSD.</td></tr>
   </tbody>
 </table>
 
 <p>Shared conventions:</p>
 <ul>
-  <li>every command of the four groups takes <code>--json</code> (<code>scene reconstruct</code>
+  <li>every command of the four groups takes <code>--json</code> (<code>project scene reconstruct</code>
       takes only <code>--dry-run</code>);</li>
   <li>every verb that starts something takes <code>--dry-run</code>, and all of them but
       <code>scene reconstruct</code> take <code>--name</code>; whatever Caasi does not recognize is
@@ -557,17 +557,17 @@ exit code: 1</span>
 <span class="out">Dry run — nothing was launched:
   command: /usr/local/bin/cosmos prepare --input /data/raw</span></span></code></pre>
 
-<h2 id="scene-reconstruct">caasi scene reconstruct</h2>
-<p>Neural reconstruction is delegated, like everything else on this page: <code>scene
+<h2 id="scene-reconstruct">caasi project scene reconstruct</h2>
+<p>Neural reconstruction is delegated, like everything else on this page: <code>project scene
 reconstruct</code> resolves the <code>nurec</code> capability of the <code>usd</code> catalog
 domain (binary <code>nurec</code>) and hands it a capture — a <code>ros2 bag</code> directory
-recorded by <code>caasi scene capture</code>, or any
+recorded by <code>caasi project scene capture</code>, or any
 <a href="data.html#dataset">dataset</a> path. Caasi implements no reconstruction and reads no
 frames; the run is tracked like any other (<code>backend: nurec</code>, <code>kind:
-reconstruct</code>).</p>
+reconstruct</code>). The root <code>scene</code> group moved under <code>project</code> in 0.3.0.</p>
 
 <h3 id="scene-reconstruct-usage">Usage</h3>
-<pre class="syn"><code>caasi scene reconstruct CAPTURE [--dry-run] [ARGS…]</code></pre>
+<pre class="syn"><code>caasi project scene reconstruct CAPTURE [--dry-run] [ARGS…]</code></pre>
 <table>
   <thead><tr><th>Parameter</th><th>Kind</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
   <tbody>
@@ -578,19 +578,19 @@ reconstruct</code>).</p>
 </table>
 <p>The two gates run in order — the capture must exist, then a reconstruction tool must resolve —
 and on a machine without NuRec this is the real output:</p>
-<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi scene reconstruct /tmp/nope --dry-run</span>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi project scene reconstruct /tmp/nope --dry-run</span>
 <span class="err">Error: Capture '/tmp/nope' not found.
 exit code: 1</span>
-<span class="in">caasi scene reconstruct datasets/kitchen-capture --dry-run</span>
+<span class="in">caasi project scene reconstruct datasets/kitchen-capture --dry-run</span>
 <span class="err">Error: No neural reconstruction tool detected (nurec). Install NuRec, or point Caasi at its CLI: caasi config set catalog.usd.nurec.binaries "[&lt;cli&gt;]".
 exit code: 1</span></span></code></pre>
 <p>With a CLI resolved — its own, or one you named with <code>caasi config set
 catalog.usd.nurec.binaries "[&lt;cli&gt;]"</code> — the command is
 <code>[&lt;nurec&gt;, &lt;capture&gt;, ARGS…]</code>:</p>
-<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi scene reconstruct datasets/kitchen-capture --dry-run</span>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi project scene reconstruct datasets/kitchen-capture --dry-run</span>
 <span class="out">Dry run — nothing was started:
   command: /usr/local/bin/nurec datasets/kitchen-capture</span>
-<span class="in">caasi scene reconstruct datasets/kitchen-capture --output kitchen.usd</span>
+<span class="in">caasi project scene reconstruct datasets/kitchen-capture --output kitchen.usd</span>
 <span class="ok">Reconstruction started for datasets/kitchen-capture.</span>
 <span class="dim">  Follow it with: caasi logs 20260907-213012-kitchen-capture -f</span></span></code></pre>
 <p>The run is named after the capture's directory name, and its manifest carries the capture path,
@@ -651,8 +651,8 @@ for a missing ROS 2.</p>
 </div>
 
 <footer class="doc-footer">
-  Caasi CLI 0.2.0 — these pages live in <code>docs/</code> and need no build step.
-  Source: <a href="https://github.com/a6y3ap/caasi">github.com/a6y3ap/caasi</a>.
+  Caasi CLI 0.3.0 — these pages live in <code>docs/</code> and need no build step.
+  Source: <a href="https://github.com/7a6172/caasi">github.com/7a6172/caasi</a>.
 </footer>
 </main>
 </div>

@@ -14,8 +14,10 @@ from .. import state
 from ..checks import CheckResult, run_checks
 from ..core import containers as containers_core
 from ..core import runs
+from ..core.check import CheckContext, CheckEngine
 from ..i18n import _
 from ..utils import output
+from . import check_cmd
 from . import ecosystem as eco
 
 app = typer.Typer(no_args_is_help=True)
@@ -104,25 +106,13 @@ def container_status(
 def container_check(
     json_output: bool = typer.Option(False, "--json", help=_("flag.json")),
 ) -> None:
-    tool = containers_core.find_container_tool()
-    daemon = containers_core.daemon_ok(tool) if tool else False
-    gpu = containers_core.nvidia_runtime(tool) if tool and daemon else False
-    checks = [
-        {"check": "tool", "ok": bool(tool), "detail": tool or _("container.no_tool")},
-        {"check": "daemon", "ok": daemon, "detail": _("container.daemon_ok") if daemon else _("container.daemon_fail")},
-        {"check": "nvidia-runtime", "ok": gpu, "detail": _("container.gpu_ok") if gpu else _("container.gpu_fail")},
-    ]
-    ok = all(check["ok"] for check in checks)
+    ctx = CheckContext(config=state.cfg(), extra={"containers": True})
+    report = CheckEngine().one("container", ctx)
     if output.wants_json(json_output):
-        output.echo_json({"ok": ok, "checks": checks})
-        raise typer.Exit(0 if ok else 1)
-    for check in checks:
-        symbol, style = output.status_symbol("ok" if check["ok"] else "fail")
-        output.echo(f"[{style}]{symbol}[/] {check['check']:<16} {check['detail']}")
-    if not ok:
-        output.fail(_("container.fail"))
-        return
-    output.echo(f"[green]{_('container.pass')}[/green]")
+        output.echo_json(report.to_dict())
+        raise typer.Exit(check_cmd.exit_code(report.result))
+    check_cmd.render_report(report)
+    raise typer.Exit(check_cmd.exit_code(report.result))
 
 
 def _doctor_extras() -> list[CheckResult]:

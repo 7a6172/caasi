@@ -13,6 +13,7 @@ from ..core import dataset as dataset_core
 from ..core import experiment, runs
 from ..i18n import _
 from ..utils import output, shell
+from . import run_cmd
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -138,7 +139,7 @@ def dataset_generate(
     env["CAASI_DATASET_DIR"] = str(dataset_dir)
     command = [*command, "--dataset-dir", str(dataset_dir)]
 
-    record = runs.start_run(
+    record = run_cmd.start_with_provenance(
         cfg,
         name=dataset_name,
         command=command,

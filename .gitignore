@@ -24,8 +24,3 @@ datasets/
 .idea/
 .vscode/
 .DS_Store
-
-# Local notes — kept out of the published repository
-.trae/
-plan.md
-plan-eco.md

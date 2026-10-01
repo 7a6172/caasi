@@ -88,13 +88,21 @@ def test_control_check_good(runner, fake_ros, tmp_path):  # noqa: F811
     result = runner.invoke(app, ["control", "check", str(params), "--json"])
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
-    assert data["ok"] is True
-    assert data["controllers"] == ["joint_state_broadcaster", "diff_drive_controller"]
-    assert data["issues"] == []
+    assert data["scope"] == "control"
+    assert data["result"] == "ready"
+    controllers = [
+        item["name"]
+        for item in data["items"]
+        if item["compatibility"] == "compatible" and item["name"] != "controller_manager"
+    ]
+    assert controllers == ["joint_state_broadcaster", "diff_drive_controller"]
+    manager = data["items"][0]
+    assert manager["name"] == "controller_manager"
+    assert manager["detected"] == "update_rate=100"
 
     result = runner.invoke(app, ["control", "check", str(params)])
     assert result.exit_code == 0
-    assert "looks good (2 controller(s))" in result.output
+    assert "READY" in result.output
 
 
 def test_control_check_issues(runner, fake_ros, tmp_path):  # noqa: F811
@@ -102,15 +110,17 @@ def test_control_check_issues(runner, fake_ros, tmp_path):  # noqa: F811
     params.write_text(BAD_PARAMS, encoding="utf-8")
 
     result = runner.invoke(app, ["control", "check", str(params), "--json"])
-    assert result.exit_code == 1
+    assert result.exit_code == 3  # Check Contract: incompatible → exit 3
     data = json.loads(result.output)
-    assert data["ok"] is False
-    issues = "\n".join(data["issues"])
+    assert data["result"] == "incompatible"
+    issues = "\n".join(
+        item["note"] for item in data["items"] if item["compatibility"] == "incompatible"
+    )
     assert "update_rate" in issues
     assert "broken_controller" in issues
 
     result = runner.invoke(app, ["control", "check", str(params)])
-    assert result.exit_code == 1
+    assert result.exit_code == 3
     assert "no 'update_rate'" in result.output
     assert "broken_controller" in result.output
 
@@ -119,8 +129,10 @@ def test_control_check_missing_manager(runner, fake_ros, tmp_path):  # noqa: F81
     params = tmp_path / "empty.yaml"
     params.write_text(yaml.safe_dump({"something_else": {}}), encoding="utf-8")
     result = runner.invoke(app, ["control", "check", str(params), "--json"])
-    assert result.exit_code == 1
-    assert "controller_manager" in "\n".join(json.loads(result.output)["issues"])
+    assert result.exit_code == 3
+    data = json.loads(result.output)
+    assert data["result"] == "incompatible"
+    assert "controller_manager" in "\n".join(item["note"] for item in data["items"])
 
 
 def test_control_check_requires_file(runner, fake_ros, tmp_path):  # noqa: F811

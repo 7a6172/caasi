@@ -237,3 +237,33 @@ def test_catalog_a_new_domain_from_config(runner):
     data = json.loads(result.output)
     assert data["key"] == "lidar"
     assert data["capabilities"][0]["packages"] == ["velodyne"]
+
+
+def test_environment_keys_absent_by_default(runner):
+    # §7.3: environment/monitor/audit/check config defaults are absent.
+    assert "environment" not in Config.load().data
+    result = runner.invoke(app, ["config", "get", "environment.cache_ttl"])
+    assert result.exit_code == 1
+
+
+def test_environment_keys_readable_when_set(runner):
+    _write_global("environment:\n  cache_ttl: 3600\n")
+    result = runner.invoke(app, ["config", "get", "environment.cache_ttl"])
+    assert result.exit_code == 0
+    assert result.output.strip() == "3600"
+
+
+def test_check_strict_absent_by_default(runner):
+    # §7.3: `check.strict` is opt-in — warnings stay warnings unless asked for.
+    assert "check" not in Config.load().data
+    assert Config.load().get("check.strict", False) is False
+    result = runner.invoke(app, ["config", "get", "check.strict"])
+    assert result.exit_code == 1
+
+
+def test_check_strict_readable_when_set(runner):
+    _write_global("check:\n  strict: true\n")
+    assert Config.load().get("check.strict", False) is True
+    result = runner.invoke(app, ["config", "get", "check.strict"])
+    assert result.exit_code == 0
+    assert result.output.strip() == "True"

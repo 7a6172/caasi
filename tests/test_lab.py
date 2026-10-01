@@ -134,17 +134,13 @@ def test_lab_run_missing_lab_tool(runner, tmp_path):
     assert "isaaclab" in all_output(result)
 
 
-def test_lab_train_passes_training_args(runner, tmp_path):
-    config = _make_experiment(tmp_path)
-    result = runner.invoke(
-        app, ["lab", "train", str(config), "--steps", "10", "--envs", "2", "--dry-run"]
-    )
-    assert result.exit_code == 0
-    flat = " ".join(result.output.split())
-    assert "--steps 10" in flat
-    assert "--envs 2" in flat
-    assert "--headless" in flat
-    assert runs.list_runs(state.cfg()) == []
+def test_lab_train_folded_into_root_train(runner):
+    # v0.3.0 IA: `lab train` removed; root `train` is the generic launcher
+    # (covered by test_train_cmd.py). `lab` keeps status/run/play/evaluate.
+    help_out = runner.invoke(app, ["lab", "--help"]).output
+    for verb in ("status", "run", "play", "evaluate"):
+        assert verb in help_out
+    assert runner.invoke(app, ["lab", "train", "x.yaml"]).exit_code != 0
 
 
 def test_lab_play_dry_run_uses_play_script_and_checkpoint(runner, tmp_path, monkeypatch):

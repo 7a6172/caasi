@@ -5,7 +5,7 @@ wider robotics ecosystem (ROS 2, Nav2, MoveIt 2, ros2\_control, ...).
 
 Headless-first. CLI-first. Process-oriented. Visualization-independent.
 
-**Documentation:** <https://a6y3ap.github.io/caasi/>
+**Documentation:** <https://7a6172.github.io/caasi/>
 
 > **Note:** Caasi is an independent open-source project. It is not affiliated with,
 > endorsed by, or an official product of NVIDIA.
@@ -42,11 +42,13 @@ python3 -m venv ~/.venvs/caasi && ~/.venvs/caasi/bin/pip install caasi
 From source:
 
 ```bash
-git clone https://github.com/a6y3ap/caasi.git && cd caasi
+git clone https://github.com/7a6172/caasi.git && cd caasi
 pip install -e .              # add pytest as well: pip install -e ".[dev]"
 ```
 
-Upgrade: `pipx upgrade caasi` / `pip install -U caasi`. Shell completion:
+Upgrade: `pipx upgrade caasi` / `pip install -U caasi`. 
+
+Shell completion:
 `caasi --install-completion`.
 
 ## Quickstart
@@ -84,20 +86,21 @@ caasi run status latest
 
 | Group               | Commands                                                                                            | Reference                                                                        |
 | ------------------- | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Environment         | `doctor`, `gpu status\|info\|memory\|doctor\|monitor\|test`, `system status\|doctor\|memory\|processes`, `info`, `version`   | [environment.html](https://a6y3ap.github.io/caasi/environment.html)       |
-| Configuration       | `config show\|get\|set\|path\|tools\|catalog`                                                       | [configuration.html](https://a6y3ap.github.io/caasi/configuration.html)   |
-| Projects            | `init`, `setup`, `project info\|validate`, `robot list\|create\|inspect\|info\|import\|validate`, `scene list\|create\|inspect\|import\|validate\|capture\|reconstruct`, `task` | [projects.html](https://a6y3ap.github.io/caasi/projects.html)             |
-| Runs & logs         | `run list\|status\|logs\|attach\|stop\|pause\|resume\|delete\|inspect`, `logs`                      | [runs.html](https://a6y3ap.github.io/caasi/runs.html)                     |
-| Simulation          | `sim run\|headless\|status\|check\|logs\|extensions\|stop\|pause\|resume`, `lab status\|run\|train\|play\|evaluate` | [simulation.html](https://a6y3ap.github.io/caasi/simulation.html)         |
-| Training            | `train`, `benchmark start\|report`                                                                  | [training.html](https://a6y3ap.github.io/caasi/training.html)             |
-| Data & sensors      | `dataset list\|generate\|inspect\|convert\|validate\|download`, `sensor list\|inspect\|test`, `vision status\|inspect\|test` | [data.html](https://a6y3ap.github.io/caasi/data.html)             |
-| Review              | `replay`, `view rviz\|foxglove\|open3d\|attach\|run`                                                | [review.html](https://a6y3ap.github.io/caasi/review.html)                 |
-| ROS ecosystem       | `ros status\|doctor\|list\|launch\|topic\|node\|graph\|service`, `nav status\|launch\|inspect\|test\|doctor`, `moveit status\|launch\|plan\|test\|doctor`, `control status\|list\|check\|doctor` | [ros.html](https://a6y3ap.github.io/caasi/ros.html) |
-| GPU-accelerated robotics | `isaac-ros status\|list\|doctor\|launch`, `perception status\|camera\|pose\|detect\|segment\|inspect`, `slam status\|launch\|test\|benchmark`, `mapping status\|run\|inspect`, `motion status\|serve\|plan\|execute\|benchmark`, `nitros status\|doctor`, `pipeline inspect` | [accelerated.html](https://a6y3ap.github.io/caasi/accelerated.html) |
-| Synthetic data & teleop | `synth status\|generate\|preview\|validate`, `teleop start\|record\|stop\|replay`                | [synthetic.html](https://a6y3ap.github.io/caasi/synthetic.html)           |
-| Physics & foundation models | `physics status\|list\|run\|benchmark`, `warp status\|test\|benchmark`, `groot status\|setup\|run\|train\|evaluate`, `cosmos status\|run\|dataset` | [platform.html](https://a6y3ap.github.io/caasi/platform.html)     |
-| Native & shell      | `native run\|sim\|lab\|ros`, `shell`                                                                | [native.html](https://a6y3ap.github.io/caasi/native.html)                 |
-| Remote & containers | `remote list\|connect\|run`, `container list\|status\|check\|doctor\|run`                           | [remote.html](https://a6y3ap.github.io/caasi/remote.html)                 |
+| Environment         | `doctor`, `check`, `env inspect\|fingerprint\|lock\|compare\|show`, `gpu status\|info\|memory\|doctor\|monitor\|test`, `system status\|doctor\|memory\|processes`, `info`, `version`   | [environment.html](https://7a6172.github.io/caasi/environment.html)       |
+| Configuration       | `config show\|get\|set\|path\|tools\|catalog`                                                       | [configuration.html](https://7a6172.github.io/caasi/configuration.html)   |
+| Projects            | `init` (alias), `setup`, `project info\|validate\|add\|remove\|list\|inspect\|add-file\|config`, `project robot list\|create\|inspect\|info\|import\|validate`, `project scene list\|create\|inspect\|import\|validate\|capture\|reconstruct`, `project task list\|create\|inspect\|validate` | [projects.html](https://7a6172.github.io/caasi/projects.html)             |
+| Runs & logs         | `run start\|restart\|list\|status\|logs\|attach\|stop\|pause\|resume\|delete\|inspect`, `start`, `logs` | [runs.html](https://7a6172.github.io/caasi/runs.html)                     |
+| Observability       | `monitor`, `audit`, `logs`, `run inspect` (provenance bundle)                                       | [observability.html](https://7a6172.github.io/caasi/observability.html)   |
+| Simulation          | `sim run\|headless\|check\|extensions`, `lab status\|run\|play\|evaluate` — sim lifecycle/logs via `run … --backend sim` | [simulation.html](https://7a6172.github.io/caasi/simulation.html)         |
+| Training            | `train`, `benchmark start\|report`                                                                  | [training.html](https://7a6172.github.io/caasi/training.html)             |
+| Data & sensors      | `dataset list\|generate\|inspect\|convert\|validate\|download`, `sensor list\|inspect\|test`, `vision status\|inspect\|test` | [data.html](https://7a6172.github.io/caasi/data.html)             |
+| Review              | `replay`, `view rviz\|foxglove\|open3d\|attach\|run`                                                | [review.html](https://7a6172.github.io/caasi/review.html)                 |
+| ROS ecosystem       | `ros status\|doctor\|list\|launch\|topic\|node\|graph\|service`, `nav status\|launch\|inspect\|test\|doctor`, `moveit status\|launch\|plan\|test\|doctor`, `control status\|list\|check\|doctor` | [ros.html](https://7a6172.github.io/caasi/ros.html) |
+| GPU-accelerated robotics | `isaac-ros status\|list\|doctor\|launch`, `perception status\|camera\|pose\|detect\|segment\|inspect`, `slam status\|launch\|test\|benchmark`, `mapping status\|run\|inspect`, `motion status\|serve\|plan\|execute\|benchmark`, `nitros status\|doctor`, `pipeline inspect` | [accelerated.html](https://7a6172.github.io/caasi/accelerated.html) |
+| Synthetic data & teleop | `dataset generate` (Replicator via the `sdg` catalog — the root `synth` group was removed), `teleop start\|record\|stop\|replay`                | [synthetic.html](https://7a6172.github.io/caasi/synthetic.html)           |
+| Physics & foundation models | `physics status\|list\|run\|benchmark`, `warp status\|test\|benchmark`, `groot status\|setup\|run\|train\|evaluate`, `cosmos status\|run\|dataset` | [platform.html](https://7a6172.github.io/caasi/platform.html)     |
+| Native & shell      | `native run\|sim\|lab\|ros`, `shell`                                                                | [native.html](https://7a6172.github.io/caasi/native.html)                 |
+| Remote & containers | `remote list\|connect\|run`, `container list\|status\|check\|doctor\|run`                           | [remote.html](https://7a6172.github.io/caasi/remote.html)                 |
 
 More examples:
 
@@ -107,7 +110,7 @@ caasi ros status && caasi nav launch --map maps/warehouse.yaml
 caasi container run nvcr.io/nvidia/isaac-sim:5.1.0 ./runheadless.sh
 caasi remote run gpu-box python train.py --steps 1000
 caasi perception status && caasi slam launch --backend toolbox
-caasi synth generate experiments/sdg.yaml --episodes 100
+caasi dataset generate experiments/sdg.yaml --episodes 100
 caasi teleop record -t /cmd_vel --name demo
 caasi physics run experiments/wave.yaml --engine newton
 caasi groot train configs/finetune.yaml --epochs 3
@@ -164,20 +167,22 @@ pytest
 
 ## Documentation
 
-Read it at <https://a6y3ap.github.io/caasi/> or open
+Read it at <https://7a6172.github.io/caasi/> or open
 [`docs/index.html`](docs/index.html) directly in a browser — the pages are plain HTML in
 [`docs/`](docs/) and need no build step.
 
 The reference is split by concern: [environment](docs/environment.html) and
 [configuration](docs/configuration.html) for the machine and the capability catalog;
-[runs](docs/runs.html), [projects](docs/projects.html), [simulation](docs/simulation.html),
-[training](docs/training.html), [data](docs/data.html) and [review](docs/review.html) for the
-daily workflow; [ros](docs/ros.html) for ROS 2, Nav2, MoveIt 2 and ros2\_control;
-[accelerated](docs/accelerated.html) for Isaac ROS, perception, SLAM, mapping, motion and
-NITROS; [synthetic](docs/synthetic.html) for Replicator synthetic data and teleoperation;
-[platform](docs/platform.html) for physics engines, Warp, GR00T and Cosmos; and
+[runs](docs/runs.html), [observability](docs/observability.html), [projects](docs/projects.html),
+[simulation](docs/simulation.html), [training](docs/training.html), [data](docs/data.html) and
+[review](docs/review.html) for the daily workflow; [ros](docs/ros.html) for ROS 2, Nav2, MoveIt 2
+and ros2\_control; [accelerated](docs/accelerated.html) for Isaac ROS, perception, SLAM, mapping,
+motion and NITROS; [synthetic](docs/synthetic.html) for Replicator synthetic data and
+teleoperation; [platform](docs/platform.html) for physics engines, Warp, GR00T and Cosmos; and
 [native](docs/native.html) plus [remote](docs/remote.html) for the escape hatches.
+
+Release notes and in-progress changes: [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
-MIT © [a6y3ap](https://github.com/a6y3ap) — see [LICENSE](LICENSE).
+MIT © [zar x"7A6172"](https://github.com/7a6172) — see [LICENSE](LICENSE).

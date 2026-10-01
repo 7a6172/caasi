@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Observability — Caasi CLI Documentation</title>
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/theme.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html">Caa<span>si</span></a>
+  <span class="badge">v0.3.0</span>
+  <span class="tagline">Observability: monitor · logs · audit · provenance</span>
+  <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
+</header>
+<div class="layout">
+<aside id="sidebar"></aside>
+<main>
+
+<h1>Observability</h1>
+<p class="lead">
+Once a run is going you need to <strong>watch it</strong>, <strong>read its logs</strong>,
+<strong>account for what happened</strong> and <strong>prove you can reproduce it</strong>.
+Caasi gives each of those jobs its own verb — <code>monitor</code>, <code>run logs</code>,
+<code>audit</code> and the provenance bundle — and none of them import the heavy stack.
+They read <code>/proc</code>, <code>nvidia-smi</code>, the run store under
+<code>~/.caasi/runs/</code> and your project's <code>.caasi/</code> metadata.
+</p>
+
+<div class="callout note">
+  <div class="c-title">The five verbs are distinct</div>
+  <p><code>doctor</code>, <code>check</code>, <code>test</code>, <code>validate</code> and
+  <code>audit</code> answer five different questions. <code>doctor</code> does <em>not</em>
+  absorb <code>check</code> or <code>audit</code>; <code>audit</code> is the fifth verb, added
+  in 0.3.0. See <a href="#verbs">the five-verb rule</a> below.</p>
+</div>
+
+<h2 id="verbs">The five-verb rule</h2>
+<p>The organising principle of the whole CLI. Every diagnostic-ish command is one of five
+verbs, and each verb has exactly one job:</p>
+<table>
+  <thead><tr><th>Verb</th><th>Question it answers</th><th>Scope</th></tr></thead>
+  <tbody>
+    <tr><td><code>doctor</code></td><td><strong>What's wrong with my environment?</strong> (is the machine capable?)</td><td>machine / toolchain</td></tr>
+    <tr><td><code>check</code></td><td><strong>Can this work here?</strong> (preflight / compatibility)</td><td>project ↔ machine, per-domain</td></tr>
+    <tr><td><code>test</code></td><td><strong>Does it actually work when executed?</strong> (live smoke)</td><td>per-domain</td></tr>
+    <tr><td><code>validate</code></td><td><strong>Is this config / data / resource structurally valid?</strong></td><td>per-domain</td></tr>
+    <tr><td><code>audit</code></td><td><strong>Can I account for and reproduce what happened?</strong></td><td>project + runs + environment</td></tr>
+  </tbody>
+</table>
+<p><code>inspect</code> is the per-domain deep-dive (<code>env inspect</code>,
+<code>project inspect</code>, <code>run inspect</code>); <code>setup</code> provisions the
+machine/toolchain; <code>project</code> manages the robotics project. All <code>check</code>
+entry points share one <a href="environment.html#check">Check Contract</a>.</p>
+
+<h2 id="monitor">caasi monitor</h2>
+<p>A live resource panel for a run and the machine — the <code>gpu monitor</code> pattern
+widened to CPU, RAM, GPU, VRAM, throughput and runtime. It defaults to the
+<strong>latest run</strong>; with no runs recorded it shows the machine alone.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi monitor</span>
+<span class="dim"># live panel, refreshed every 2s — Ctrl+C stops watching, the run keeps going</span>
+<span class="in">caasi monitor --once</span>
+<span class="out">Run         wave (20260905-142301-wave)
+Status      running
+CPU         12.5%
+RAM         8.5 / 64.0 GiB
+GPU         30.0%
+VRAM        6.2 / 24.0 GiB
+Simulation  980.0 steps/s
+Runtime     00:02:15</span>
+<span class="in">caasi monitor --once --json | jq '{cpu,ram_used,gpu,runtime_s}'</span>
+<span class="out">{
+  "cpu": 12.5,
+  "ram_used": 8.5,
+  "gpu": 30.0,
+  "runtime_s": 135.2
+}</span></span></code></pre>
+<table>
+  <thead><tr><th>Argument / option</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr><td><code>[query]</code></td><td>Run id, unique prefix, name or <code>latest</code> (the default). With no runs, the machine is shown alone.</td></tr>
+    <tr><td><code>--interval &lt;float&gt;</code></td><td>Seconds between refreshes (default <code>2.0</code>, minimum <code>0.1</code>).</td></tr>
+    <tr><td><code>--once</code></td><td>Print a single snapshot and exit — the honest replacement for the dropped root <code>status</code>.</td></tr>
+    <tr><td><code>--json</code></td><td>Emit the snapshot as JSON (implies a single sample).</td></tr>
+  </tbody>
+</table>
+<p>The JSON payload carries the run identity (<code>run</code>, <code>name</code>,
+<code>status</code>, <code>backend</code>) plus the sample: <code>cpu</code>,
+<code>ram_used</code>, <code>ram_total</code>, <code>gpu</code>, <code>vram_used</code>,
+<code>vram_total</code>, <code>processes</code>, <code>runtime_s</code>, and
+<code>steps_per_s</code> <em>only when a throughput metric was parsed</em> (it is omitted,
+never faked).</p>
+<div class="callout tip">
+  <div class="c-title">Stays in its lane</div>
+  <p><code>gpu monitor</code> remains GPU-only; <code>system status|memory|processes</code>
+  remain machine-only. <code>monitor</code> is the whole-run view that ties them together.</p>
+</div>
+
+<h2 id="logs">Aggregated run logs</h2>
+<p><code>run logs</code> reads a run's captured stdout/stderr and can filter it. The root
+<code>caasi logs</code> is a thin alias of <code>caasi run logs</code> — same command, one
+underlying operation.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi run logs latest -f</span>
+<span class="dim"># follow until the run ends — Ctrl+C stops following, the run keeps going</span>
+<span class="in">caasi run logs latest --component nav2 --errors</span>
+<span class="out">[14:23:31] [nav2] [ERROR] planner: no valid path to goal
+[14:23:44] [nav2] [ERROR] controller: aborted — recovery triggered</span>
+<span class="in">caasi run logs latest --since 10m -n 200</span>
+<span class="in">caasi logs latest --stream stderr</span>
+<span class="dim"># root alias</span></span></code></pre>
+<table>
+  <thead><tr><th>Option</th><th>Short</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr><td><code>--lines</code></td><td><code>-n</code></td><td>Trailing lines to show (default <code>50</code>).</td></tr>
+    <tr><td><code>--follow</code></td><td><code>-f</code></td><td>Follow the log until the run ends.</td></tr>
+    <tr><td><code>--stream</code></td><td><code>-s</code></td><td><code>stdout</code> (default) or <code>stderr</code>.</td></tr>
+    <tr><td><code>--component</code></td><td>—</td><td>Only lines tagged with this component (e.g. <code>nav2</code>).</td></tr>
+    <tr><td><code>--errors</code></td><td>—</td><td>Only lines that look like errors.</td></tr>
+    <tr><td><code>--since</code></td><td>—</td><td>Time window: <code>30s</code>, <code>10m</code>, <code>2h</code>, <code>1d</code>. Untimestamped lines are excluded.</td></tr>
+    <tr><td><code>--json</code></td><td>—</td><td>Structured log records.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="audit">caasi audit</h2>
+<p>The fifth verb: <strong>account for a project and its reproducibility.</strong>
+<code>audit</code> walks six scopes and renders a ✓ / ⚠ / ✗ report. It never fails on
+warnings — exit is <code>1</code> only when there are errors.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi audit</span>
+<span class="out">CAASI Audit
+
+PROJECT
+  ✓ Valid caasi.yaml
+  ⚠ Working tree has uncommitted changes
+
+DEPENDENCIES
+  ✓ isaac.lab 4.5.0
+  ⚠ nav2: version not verified
+
+ENVIRONMENT
+  ✓ Environment fingerprint recorded
+  ✓ GPU available
+  ✓ CUDA 13.0
+
+FILES
+  ✓ All CAASI directories present
+  ✓ Component definitions look valid
+
+RUNS
+  ✓ 2 runs recorded
+  ✓ Latest run has logs
+
+REPRODUCIBILITY
+  ✓ git HEAD 1a2b3c4
+  ✓ caasi.lock present
+
+Result: 6 warnings, 0 errors</span>
+<span class="in">echo $?</span>
+<span class="ok">0</span></span></code></pre>
+<table>
+  <thead><tr><th>Scope</th><th>What it accounts for</th></tr></thead>
+  <tbody>
+    <tr><td><code>project</code></td><td><code>caasi.yaml</code> present, schema-valid and named; git tree clean or dirty.</td></tr>
+    <tr><td><code>dependencies</code></td><td>Declared <code>requires</code> vs. what is detected — reuses the <a href="environment.html#check">Check Contract</a> detector, so "is it there?" has one owner.</td></tr>
+    <tr><td><code>environment</code></td><td>Fingerprint recorded, GPU available, CUDA detected, Python drift vs. the recorded fingerprint.</td></tr>
+    <tr><td><code>files</code></td><td>CAASI directories present; component definitions well-formed.</td></tr>
+    <tr><td><code>runs</code></td><td>Recorded runs, orphaned/stale run directories, latest-run logs, parsed throughput metrics.</td></tr>
+    <tr><td><code>reproducibility</code></td><td>git commit, environment fingerprint, <code>caasi.lock</code>, and provenance-bundle completeness for the latest run.</td></tr>
+  </tbody>
+</table>
+<p>Omit the scope to audit all six, or name one: <code>caasi audit reproducibility</code>.
+An unknown scope is a usage error (exit <code>1</code>).</p>
+
+<h3>audit --fix is deliberately conservative</h3>
+<p><code>--fix</code> applies <strong>only CAASI-owned safe fixes</strong>. Today that means
+exactly one thing: <strong>creating missing CAASI directories</strong> (<code>runs/</code>,
+<code>artifacts/</code>, <code>logs/</code>, <code>.caasi/</code> …). It never rewrites or
+deletes a user file, and never touches user source, packages, drivers, upstream installs,
+ROS packages or Isaac installs — those categories stay <em>report-only</em>. An audit fix
+must never destroy evidence.</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">rm -rf artifacts runs &amp;&amp; caasi audit files --fix</span>
+<span class="ok">Applied 2 safe fix(es).</span>
+<span class="out">FILES
+  ✓ Created missing CAASI directory: artifacts
+  ✓ Created missing CAASI directory: runs
+
+Result: 0 warnings, 0 errors</span></span></code></pre>
+<p>Fixes are off unless asked for. Set <code>audit.fix: true</code> in
+<code>caasi.yaml</code> (or pass <code>--fix</code>) to enable them; the key is absent by
+default. See <a href="configuration.html#audit">configuration</a>.</p>
+
+<h3>Machine-readable audit</h3>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi audit reproducibility --json</span>
+<span class="out">{
+  "scope": "reproducibility",
+  "result": "ok",
+  "warnings": 0,
+  "errors": 0,
+  "fixed": [],
+  "groups": [
+    {
+      "scope": "reproducibility",
+      "findings": [
+        { "severity": "ok", "message": "git HEAD 1a2b3c4" },
+        { "severity": "ok", "message": "Environment fingerprint recorded" },
+        { "severity": "ok", "message": "caasi.lock present" }
+      ]
+    }
+  ]
+}</span></span></code></pre>
+<p><code>result</code> is <code>ok</code>, <code>warning</code> or <code>error</code>;
+each finding carries a <code>severity</code>, a <code>message</code> and — when a safe fix
+exists — a <code>fix</code> hint. The process exits <code>1</code> only when
+<code>errors &gt; 0</code>.</p>
+
+<h2 id="provenance">The provenance bundle &amp; run identity</h2>
+<p>Every <code>run start</code> writes a provenance bundle into the run directory, so a
+finished run can be accounted for and reproduced. <code>run inspect</code> lists every file
+in that directory — the bundle plus the captured logs — as <code>{path, size}</code> objects;
+<code>jq -r '.files[].path'</code> shows just the names:</p>
+<pre class="term"><code><span class="t-head">shell</span><span class="t-body"><span class="in">caasi run inspect latest --json | jq -r '.files[].path'</span>
+<span class="out">configuration.yaml
+dependencies.yaml
+environment.yaml
+git.json
+hardware.yaml
+manifest.yaml
+processes.json
+stderr.log
+stdout.log</span></span></code></pre>
+<table>
+  <thead><tr><th>File</th><th>Records</th></tr></thead>
+  <tbody>
+    <tr><td><code>manifest.yaml</code></td><td>Run identity: id, name, backend, the resolved command, start time, status.</td></tr>
+    <tr><td><code>environment.yaml</code></td><td>The environment fingerprint at launch (OS, Python, ROS, Isaac, compilers …).</td></tr>
+    <tr><td><code>hardware.yaml</code></td><td>CPU, RAM and GPU/VRAM captured at launch.</td></tr>
+    <tr><td><code>dependencies.yaml</code></td><td>Resolved versions of the project's declared requirements.</td></tr>
+    <tr><td><code>configuration.yaml</code></td><td>The effective Caasi configuration (secrets redacted).</td></tr>
+    <tr><td><code>git.json</code></td><td>Repo HEAD, branch and dirty state — or <code>{"available": false}</code> when there is no git or no repo.</td></tr>
+    <tr><td><code>processes.json</code></td><td>The launched process tree (pids, commands).</td></tr>
+  </tbody>
+</table>
+<p>Provenance <strong>degrades honestly</strong>: no git → <code>{"available": false}</code>;
+no parsed throughput → the metric is omitted. Run identity is recorded locally now so it
+survives the SSH hop when remote execution lands in v0.4.0. <code>audit reproducibility</code>
+checks this bundle for completeness; <code>env fingerprint</code> and <code>env lock</code>
+(see <a href="environment.html">Environment</a>) feed it.</p>
+
+<div class="page-nav">
+  <a class="prev" href="runs.html"><span class="pn-label">Previous</span><span class="pn-title">← Runs &amp; Logs</span></a>
+  <a class="next" href="projects.html"><span class="pn-label">Next</span><span class="pn-title">Projects →</span></a>
+</div>
+
+<footer class="doc-footer">
+  Caasi CLI 0.3.0 — these pages live in <code>docs/</code> and need no build step.
+  Source: <a href="https://github.com/7a6172/caasi">github.com/7a6172/caasi</a>.
+</footer>
+</main>
+</div>
+<script src="assets/copy.js"></script>
+<script src="assets/sidebar.js"></script>
+</body>
+</html>

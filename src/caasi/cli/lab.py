@@ -1,4 +1,9 @@
-"""`caasi lab` — run, train and evaluate Isaac Lab experiments."""
+"""`caasi lab` — run, play and evaluate Isaac Lab experiments.
+
+The launch verbs are domain doors onto the canonical launcher (§5.4):
+they delegate to :func:`caasi.cli.run_cmd.launch_experiment` so every
+started run gets the §4.7 provenance bundle.
+"""
 
 from __future__ import annotations
 
@@ -10,10 +15,10 @@ import typer
 
 from .. import state
 from ..checks.isaac import detect_isaac_lab
-from ..core import experiment, runs
+from ..core import experiment
 from ..i18n import _
 from ..utils import output, shell
-from .train_cmd import build_training_args
+from . import run_cmd
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -55,56 +60,6 @@ def lab_status(json_output: bool = typer.Option(False, "--json", help=_("flag.js
         output.echo(f"  [dim]↳ {hint}[/dim]")
 
 
-def _load(config_path: Path, json_output: bool) -> experiment.Experiment | None:
-    try:
-        exp = experiment.load_experiment(config_path)
-    except experiment.ExperimentError as exc:
-        output.fail(str(exc))
-        return None
-    if exp.backend != "lab" and not output.wants_json(json_output):
-        output.echo(f"[yellow]{_('lab.run.backend_note', backend=exp.backend)}[/yellow]")
-    return exp
-
-
-def _launch(
-    exp: experiment.Experiment,
-    *,
-    extra_args: list[str],
-    kind: str,
-    name: Optional[str],
-    dry_run: bool,
-    json_output: bool,
-    extra: dict,
-) -> None:
-    try:
-        command, env = experiment.build_command(exp, state.cfg(), extra_args=extra_args)
-    except experiment.ExperimentError as exc:
-        output.fail(str(exc))
-        return
-
-    if dry_run:
-        output.echo(f"[bold]{_('sim.run.dry_title')}[/bold]")
-        output.echo(f"  command: {' '.join(command)}")
-        output.echo(f"  cwd:     {exp.work_dir}")
-        return
-
-    record = runs.start_run(
-        state.cfg(),
-        name=name or exp.name,
-        command=command,
-        cwd=exp.work_dir,
-        env=env,
-        backend=exp.backend,
-        kind=kind,
-        extra={"experiment": str(exp.config_path), **extra},
-    )
-    if output.wants_json(json_output):
-        output.echo_json(record.to_dict())
-        return
-    output.echo(f"[green]{_('sim.run.started', id=record.run_id)}[/green]")
-    output.echo(f"  [dim]{_('sim.run.watch', id=record.run_id)}[/dim]")
-
-
 def _script_for(exp: experiment.Experiment, *keys: str) -> experiment.Experiment:
     """Swap in an alternative script declared in the config (first key wins)."""
     for key in keys:
@@ -112,6 +67,12 @@ def _script_for(exp: experiment.Experiment, *keys: str) -> experiment.Experiment
         if value:
             return replace(exp, script=str(value))
     return exp
+
+
+def _checkpoint_args(checkpoint: Optional[Path], passthrough: list[str]) -> list[str]:
+    if checkpoint is not None:
+        return ["--checkpoint", str(checkpoint), *passthrough]
+    return passthrough
 
 
 @app.command("run", help=_("lab.run_help"), context_settings=_PASS_THROUGH)
@@ -122,48 +83,14 @@ def lab_run(
     dry_run: bool = typer.Option(False, "--dry-run", help=_("sim.run.dry_run_help")),
     json_output: bool = typer.Option(False, "--json", help=_("flag.json")),
 ) -> None:
-    exp = _load(config_path, json_output)
-    if exp is None:
-        return
-    _launch(
-        exp,
-        extra_args=list(ctx.args),
+    run_cmd.launch_experiment(
+        config_path,
+        expect_backend="lab",
+        name=name,
         kind="experiment",
-        name=name,
+        extra_args=list(ctx.args),
         dry_run=dry_run,
         json_output=json_output,
-        extra={"headless": exp.headless},
-    )
-
-
-@app.command("train", help=_("lab.train_help"), context_settings=_PASS_THROUGH)
-def lab_train(
-    ctx: typer.Context,
-    config_path: Path = typer.Argument(..., help=_("train.arg.config")),
-    steps: Optional[int] = typer.Option(None, "--steps", help=_("train.flag.steps")),
-    envs: Optional[int] = typer.Option(None, "--envs", help=_("train.flag.envs")),
-    resume: Optional[Path] = typer.Option(None, "--resume", help=_("train.flag.resume")),
-    seed: Optional[int] = typer.Option(None, "--seed", help=_("train.flag.seed")),
-    device: Optional[str] = typer.Option(None, "--device", help=_("train.flag.device")),
-    name: Optional[str] = typer.Option(None, "--name", help=_("sim.run.name_help")),
-    dry_run: bool = typer.Option(False, "--dry-run", help=_("train.flag.dry_run")),
-    json_output: bool = typer.Option(False, "--json", help=_("flag.json")),
-) -> None:
-    exp = _load(config_path, json_output)
-    if exp is None:
-        return
-    extra_args = build_training_args(
-        steps=steps, envs=envs, resume=resume, seed=seed, device=device,
-        headless=exp.headless, extra=list(ctx.args),
-    )
-    _launch(
-        exp,
-        extra_args=extra_args,
-        kind="train",
-        name=name,
-        dry_run=dry_run,
-        json_output=json_output,
-        extra={"steps": steps, "envs": envs},
     )
 
 
@@ -176,21 +103,16 @@ def lab_play(
     dry_run: bool = typer.Option(False, "--dry-run", help=_("sim.run.dry_run_help")),
     json_output: bool = typer.Option(False, "--json", help=_("flag.json")),
 ) -> None:
-    exp = _load(config_path, json_output)
-    if exp is None:
-        return
-    exp = _script_for(exp, "play_script")
-    extra_args = list(ctx.args)
-    if checkpoint is not None:
-        extra_args = ["--checkpoint", str(checkpoint), *extra_args]
-    _launch(
-        exp,
-        extra_args=extra_args,
-        kind="play",
+    run_cmd.launch_experiment(
+        config_path,
+        expect_backend="lab",
         name=name,
+        kind="play",
+        extra_args=_checkpoint_args(checkpoint, list(ctx.args)),
+        extra={"checkpoint": str(checkpoint) if checkpoint else None},
         dry_run=dry_run,
         json_output=json_output,
-        extra={"checkpoint": str(checkpoint) if checkpoint else None},
+        transform=lambda exp: _script_for(exp, "play_script"),
     )
 
 
@@ -203,19 +125,14 @@ def lab_evaluate(
     dry_run: bool = typer.Option(False, "--dry-run", help=_("sim.run.dry_run_help")),
     json_output: bool = typer.Option(False, "--json", help=_("flag.json")),
 ) -> None:
-    exp = _load(config_path, json_output)
-    if exp is None:
-        return
-    exp = _script_for(exp, "evaluate_script", "play_script")
-    extra_args = list(ctx.args)
-    if checkpoint is not None:
-        extra_args = ["--checkpoint", str(checkpoint), *extra_args]
-    _launch(
-        exp,
-        extra_args=extra_args,
-        kind="evaluate",
+    run_cmd.launch_experiment(
+        config_path,
+        expect_backend="lab",
         name=name,
+        kind="evaluate",
+        extra_args=_checkpoint_args(checkpoint, list(ctx.args)),
+        extra={"checkpoint": str(checkpoint) if checkpoint else None},
         dry_run=dry_run,
         json_output=json_output,
-        extra={"checkpoint": str(checkpoint) if checkpoint else None},
+        transform=lambda exp: _script_for(exp, "evaluate_script", "play_script"),
     )
